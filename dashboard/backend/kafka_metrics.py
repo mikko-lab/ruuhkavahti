@@ -24,7 +24,14 @@ from threading import Event, Lock
 
 import httpx
 from confluent_kafka import Consumer, TopicPartition
-from confluent_kafka.admin import AdminClient, ConsumerGroupTopicPartitions
+from confluent_kafka.admin import AdminClient
+
+# confluent-kafka nimeää tämän luokan alaviivalla varustettuna sisäisenä
+# symbolina (_ConsumerGroupTopicPartitions) vaikka dokumentaatio ja
+# list_consumer_group_offsets()-metodin oma docstring puhuvat siitä
+# julkisena "ConsumerGroupTopicPartitions"-nimenä — todennettu versioissa
+# 2.4.0 ja 2.15.0, ei siis versiokohtainen kirjoitusvirhe.
+from confluent_kafka.admin import _ConsumerGroupTopicPartitions as ConsumerGroupTopicPartitions
 
 TOPIC = "viewer-messages"
 NUM_PARTITIONS = 4
