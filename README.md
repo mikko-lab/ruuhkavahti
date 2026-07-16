@@ -96,6 +96,18 @@ ruuhkavahti/
 
 ## 6. Ajaminen
 
+### Ilman omaa konetta (esim. iPad / Chromebook) — GitHub Codespaces
+
+Docker ei toimi tableteilla tai muilla laitteilla joilla ei ole omaa Linux-ympäristöä. Codespaces antaa selainpohjaisen VS Coden + terminaalin, jossa Docker toimii normaalisti — riittää pelkkä selain, ei asennuksia:
+
+1. Avaa repo GitHubissa: `github.com/mikko-lab/ruuhkavahti`
+2. **Code** → **Codespaces**-välilehti → **Create codespace on main**
+3. Kun selainpohjainen editori + terminaali avautuu, aja terminaalissa tämän osion Docker-komennot normaalisti (`docker compose up -d --build` jne.)
+4. Kun palvelut ovat käynnissä, avaa alalaidan **Ports**-välilehti — portit `5173` (dashboard) ja `8000` (backend) ilmestyvät sinne automaattisesti. Paina niiden kohdalla maapallo/selain-ikonia avataksesi toimivan julkisen esikatselulinkin selaimessa.
+5. Kuluttajien skaalaus (`docker compose up -d --scale guardrail-consumer=4`) ja piikin laukaisu toimivat samasta terminaalista/dashboardista täysin normaalisti — Codespace on vain tavallinen Linux-kontti, ei rajoitettu ympäristö.
+
+### Paikallisesti
+
 ```bash
 docker compose up -d --build
 # odota että kafka-init on luonut topicit (docker compose logs kafka-init)
