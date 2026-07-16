@@ -1,0 +1,86 @@
+"""
+Ruuhkavahti — dashboard-backend: WebSocket-silta Kafka-mittareista selaimeen.
+
+/ws                    - lähettää mittarisnapshotin ~3x/s (lag, päätösjakauma, p50/p95)
+POST /api/trigger-spike - välittää piikin laukaisun producerille (aito live-kontrolli)
+GET  /api/scale-command  - palauttaa kopioitavan `docker compose --scale`-komennon
+                            valitulle kuluttajamäärälle (ks. README: ei docker.sock-
+                            mounttia backendiin, tietoinen turvallisuusvalinta demolle)
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import threading
+
+import httpx
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+
+from kafka_metrics import (
+    MetricsState,
+    decision_consumer_loop,
+    lag_poll_loop,
+    producer_status_poll_loop,
+)
+
+KAFKA_BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP", "localhost:9092")
+PRODUCER_URL = os.environ.get("PRODUCER_URL", "http://producer:8001")
+
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
+)
+
+state = MetricsState()
+stop_event = threading.Event()
+
+
+@app.on_event("startup")
+def start_background_threads() -> None:
+    threading.Thread(
+        target=lag_poll_loop, args=(state, KAFKA_BOOTSTRAP, stop_event), daemon=True
+    ).start()
+    threading.Thread(
+        target=decision_consumer_loop, args=(state, KAFKA_BOOTSTRAP, stop_event), daemon=True
+    ).start()
+    threading.Thread(
+        target=producer_status_poll_loop, args=(state, PRODUCER_URL, stop_event), daemon=True
+    ).start()
+
+
+@app.on_event("shutdown")
+def stop_background_threads() -> None:
+    stop_event.set()
+
+
+@app.post("/api/trigger-spike")
+async def trigger_spike() -> dict:
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{PRODUCER_URL}/trigger-spike", timeout=5.0)
+        return r.json()
+
+
+@app.get("/api/producer-status")
+async def producer_status() -> dict:
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{PRODUCER_URL}/status", timeout=5.0)
+        return r.json()
+
+
+@app.get("/api/scale-command")
+def scale_command(count: int = 1) -> dict:
+    count = max(1, min(4, count))
+    return {"command": f"docker compose up -d --scale guardrail-consumer={count}"}
+
+
+@app.websocket("/ws")
+async def ws_endpoint(websocket: WebSocket) -> None:
+    await websocket.accept()
+    try:
+        while True:
+            await websocket.send_json(state.snapshot())
+            await asyncio.sleep(0.3)
+    except WebSocketDisconnect:
+        pass
