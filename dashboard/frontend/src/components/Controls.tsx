@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { MetricsSnapshot } from "../types";
 
-const API_BASE = (import.meta as any).env?.VITE_BACKEND_HTTP ?? "http://localhost:8000";
+// Tyhjä = sama origin kuin sivu itse; Vite proxyaa /api:n backendille
+// (ks. vite.config.ts), joten selain ei tarvitse koskaan backendin
+// todellista osoitetta — toimii sellaisenaan myös Codespacesin kaltaisen
+// forwarded-URL:n takana.
+const API_BASE = (import.meta as any).env?.VITE_BACKEND_HTTP ?? "";
 
 export function Controls({ snapshot }: { snapshot: MetricsSnapshot }) {
   const [desiredCount, setDesiredCount] = useState(1);

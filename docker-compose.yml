@@ -75,5 +75,3 @@ services:
       - "5173:5173"
     depends_on:
       - dashboard-backend
-    environment:
-      VITE_BACKEND_WS: ws://localhost:8000/ws

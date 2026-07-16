@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { EMPTY_SNAPSHOT, MetricsSnapshot } from "./types";
 
-const WS_URL = (import.meta as any).env?.VITE_BACKEND_WS ?? "ws://localhost:8000/ws";
+// Sama origin kuin sivu itse (Vite proxyaa /ws:n backendille, ks. vite.config.ts) —
+// toimii sellaisenaan sekä paikallisesti että forwarded-URL:n takana (esim. Codespaces),
+// koska selain ei tarvitse koskaan tietää backendin todellista osoitetta.
+const WS_URL =
+  (import.meta as any).env?.VITE_BACKEND_WS ??
+  `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`;
 
 export function useMetricsSocket(): MetricsSnapshot {
   const [snapshot, setSnapshot] = useState<MetricsSnapshot>(EMPTY_SNAPSHOT);
