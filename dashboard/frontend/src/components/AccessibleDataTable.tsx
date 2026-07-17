@@ -81,6 +81,18 @@ export function AccessibleDataTable({ snapshot }: { snapshot: MetricsSnapshot })
                 <td>Läpimenoaika p95</td>
                 <td>{snapshot.latency_p95_ms} ms</td>
               </tr>
+              <tr>
+                <td>Duplikaatteja suodatettu</td>
+                <td>{snapshot.duplicates_filtered}</td>
+              </tr>
+              <tr>
+                <td>Rebalance-strategia</td>
+                <td>{snapshot.assignment_strategy}</td>
+              </tr>
+              <tr>
+                <td>Rebalancoi juuri nyt</td>
+                <td>{snapshot.rebalancing ? "kyllä" : "ei"}</td>
+              </tr>
             </tbody>
           </table>
         </div>

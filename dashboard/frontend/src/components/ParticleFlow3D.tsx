@@ -154,6 +154,19 @@ export function ParticleFlow3D({ snapshot }: { snapshot: MetricsSnapshot }) {
       return Math.max(MIN_ACTIVE, Math.min(MAX_PARTICLES, Math.round(rate * 0.22)));
     }
 
+    // Rebalance-visualisointi (ks. README "Rebalance-strategiat"): eager-tilassa
+    // KOKO virta pysähtyy rebalancen ajaksi, koska kaikki kuluttajat luopuvat
+    // kaikista partitioistaan ennen uudelleenjakoa. Cooperative-stickyssä vain
+    // ne partitiot, jotka oikeasti vaihtavat omistajaa, pysähtyvät — loput
+    // jatkavat keskeytyksettä. Koskee vain lähdeputkea (t<0.5, ei vielä
+    // päätetty) — jo päätetyt partikkelit (t>=0.5) jatkavat altaaseen normaalisti.
+    function isPartitionPaused(partition: number): boolean {
+      const snap = snapshotRef.current;
+      if (!snap.rebalancing) return false;
+      if (snap.assignment_strategy !== "cooperative-sticky") return true;
+      return snap.transitioning_partitions.includes(partition);
+    }
+
     let animationId: number;
     function animate() {
       animationId = requestAnimationFrame(animate);
@@ -170,7 +183,10 @@ export function ParticleFlow3D({ snapshot }: { snapshot: MetricsSnapshot }) {
           continue;
         }
 
-        p.t += p.speed * delta;
+        const paused = p.t < 0.5 && isPartitionPaused(p.partition);
+        if (!paused) {
+          p.t += p.speed * delta;
+        }
         if (p.t >= 1) {
           particles[i] = spawn();
           continue;

@@ -21,8 +21,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from kafka_metrics import (
     MetricsState,
     decision_consumer_loop,
+    duplicate_events_consumer_loop,
     lag_poll_loop,
     producer_status_poll_loop,
+    rebalance_events_consumer_loop,
 )
 
 KAFKA_BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP", "localhost:9092")
@@ -47,6 +49,12 @@ def start_background_threads() -> None:
     ).start()
     threading.Thread(
         target=producer_status_poll_loop, args=(state, PRODUCER_URL, stop_event), daemon=True
+    ).start()
+    threading.Thread(
+        target=rebalance_events_consumer_loop, args=(state, KAFKA_BOOTSTRAP, stop_event), daemon=True
+    ).start()
+    threading.Thread(
+        target=duplicate_events_consumer_loop, args=(state, KAFKA_BOOTSTRAP, stop_event), daemon=True
     ).start()
 
 
@@ -73,6 +81,20 @@ async def producer_status() -> dict:
 def scale_command(count: int = 1) -> dict:
     count = max(1, min(4, count))
     return {"command": f"docker compose up -d --scale guardrail-consumer={count}"}
+
+
+@app.get("/api/assignor-command")
+def assignor_command(strategy: str = "cooperative-sticky") -> dict:
+    # Sama periaate kuin scale-command: strategian vaihto vaatii kontin
+    # uudelleenkäynnistyksen, joten dashboard näyttää komennon kopioitavaksi
+    # sen sijaan että ohjaisi Dockeria suoraan (ks. README).
+    if strategy not in ("cooperative-sticky", "range", "roundrobin"):
+        strategy = "cooperative-sticky"
+    return {
+        "command": (
+            f"ASSIGNMENT_STRATEGY={strategy} docker compose up -d --build guardrail-consumer"
+        )
+    }
 
 
 @app.websocket("/ws")

@@ -2,7 +2,7 @@
 
 ### Kafka-pohjainen reaaliaikainen guardrail-demo
 
-> **TL;DR** — Simulated TV-broadcast viewer chat at 200 → 5 000-10 000 msg/s, moderated in real time by a deterministic PASS/ESCALATE/BLOCK safety layer running as a scalable Kafka consumer group. Live dashboard (React + Three.js) visualises the message flow as a 3D particle stream and, more importantly, **consumer lag per partition** — the one number that proves whether the system is keeping up with the spike or falling behind, and whether adding consumers actually fixes it. Second, equally-load-bearing claim: the same dashboard is WCAG 2.1/2.2 AA accessible — `prefers-reduced-motion` swaps the 3D scene for the same live data with no motion, every metric exists as real semantic HTML, not just pixels, and an automated axe-core scan (`tests/test_a11y.py`) reports zero serious/critical violations in both modes.
+> **TL;DR** — Simulated TV-broadcast viewer chat at 200 → 5 000-10 000 msg/s, moderated in real time by a deterministic PASS/ESCALATE/BLOCK safety layer running as a scalable Kafka consumer group. Live dashboard (React + Three.js) visualises the message flow as a 3D particle stream and, more importantly, **consumer lag per partition** — the one number that proves whether the system is keeping up with the spike or falling behind, and whether adding consumers actually fixes it. Second, equally-load-bearing claim: the same dashboard is WCAG 2.1/2.2 AA accessible — `prefers-reduced-motion` swaps the 3D scene for the same live data with no motion, every metric exists as real semantic HTML, not just pixels, and an automated axe-core scan (`tests/test_a11y.py`) reports zero serious/critical violations in both modes. Third: the demo visualises the difference between eager and cooperative-sticky rebalancing (KIP-429) live, and filters at-least-once duplicates with a (partition, offset)-keyed cache — both honestly scoped as demo-level, not production-complete.
 
 **Skenaario:** Suora TV-lähetys, katsojaviestien määrä piikkaa hetkellisesti (esim. maalihetki). Jokainen viesti moderoidaan reaaliajassa ilman että ruuhka kaataa palvelun tai hukkaa viestejä.
 
@@ -44,10 +44,12 @@ Mikä **ei** siirry: alkuperäinen `apply_rule` päättää rakennusalan käänn
 ## 3. Oppimispolku (konseptit koodin takana)
 
 1. **Partitio ja partition key** — `viewer-messages` jaetaan 4 partitioon. `key = viewer_id` takaa, että saman katsojan viestit käsitellään aina järjestyksessä (osuvat samaan partitioon), mutta eri katsojat jakautuvat tasan 4 partitioon — järjestys JA rinnakkaisuus samaan aikaan.
-2. **Consumer group ja rebalance** — kaikki `guardrail-consumer`-instanssit kuuluvat groupiin `guardrail-group`. Kafka takaa, ettei kaksi workeria koskaan lue samaa partitiota yhtä aikaa. Kun kuluttajien määrä muuttuu, Kafka **rebalancoi**: partitiot jaetaan uudelleen elossa olevien kuluttajien kesken — tämä on se hetki, kun lisätty kuluttaja alkaa oikeasti purkaa jonoa.
+2. **Consumer group ja rebalance** — kaikki `guardrail-consumer`-instanssit kuuluvat groupiin `guardrail-group`. Kafka takaa, ettei kaksi workeria koskaan lue samaa partitiota yhtä aikaa. Kun kuluttajien määrä muuttuu, Kafka **rebalancoi**: partitiot jaetaan uudelleen elossa olevien kuluttajien kesken — tämä on se hetki, kun lisätty kuluttaja alkaa oikeasti purkaa jonoa. Kaksi eri tapaa tehdä tämä — ks. osa 5.
 3. **Offset ja at-least-once-semantiikka** — `enable.auto.commit: False`, commit vasta sen jälkeen kun päätös on kirjoitettu output-topiciin. Jos worker kaatuu ennen committia, viesti luetaan uudelleen — se ei koskaan katoa jäljettömiin (mahdollinen kaksoiskäsittely on hyväksytty kompromissi; kadonnut BLOCK-päätös ei olisi).
 4. **Consumer lag mittarina** — `lag = partition_high_watermark - group_committed_offset`. Tämä on ainoa mittari, joka reagoi suoraan sekä tuotantonopeuteen että kuluttajien määrään: piikin aikana lag kasvaa, kuluttajien lisäys (rebalance) saa sen laskemaan reaaliajassa.
 5. **Miksi WebGL vaatii aina rinnakkaisen semanttisen esityksen** — `<canvas>` on ruudunlukijalle läpinäkymätön pikselikartta. `prefers-reduced-motion` ei ole "kevyempi versio" vaan sama data ilman jatkuvaa animaatiota (liike voi aiheuttaa esim. vestibulaarioireita); ruudunlukijatuki taas vaatii saman datan olemassaolon oikeana HTML:nä riippumatta liikeasetuksesta. Kaksi eri ongelmaa, osittain päällekkäiset mutta erilliset ratkaisut — ks. osa 4.
+6. **Eager vs. cooperative-sticky rebalance (KIP-429)** — pysähtyykö rebalancen ajaksi koko kulutus vai vain ne partitiot jotka oikeasti vaihtavat omistajaa? Ks. osa 5.
+7. **Idempotenssi (partition, offset)-avaimella** — miksi Kafkan oma koordinaatti riittää dedup-avaimeksi eikä erillistä viesti-ID:tä tarvitse keksiä, ja miksi duplikaatti ESCALATE/BLOCK olisi oikea guardrail-ongelma. Ks. osa 6.
 
 ## 4. Saavutettavuus — toinen todistettava väite, ei jälkikäteen liimattu kerros
 
@@ -65,7 +67,32 @@ Lisäksi:
 - **Näppäimistö** — kaikki kontrollit ovat natiiveja `<button>`/`<input type="range">`-elementtejä, näkyvä `:focus-visible`-tila (`outline: 3px solid #60a5fa`), ei mitään `outline: none`.
 - **Automatisoitu todiste, ei väite** — `tests/test_a11y.py` käynnistää dashboardin (ilman Kafkaa — alkutila riittää), ajaa axe-coren sekä oletus- että `reduced-motion`-tilassa, ja varmistaa erikseen että `.particle-stream` on `aria-hidden` ja datataulukko on näppäimistöllä avattavissa. Tulos tätä kirjoitettaessa: **0 löydöstä (mukaan lukien kaikki vakavuustasot), 36 läpäisyä**, molemmissa tiloissa myös datataulukko avattuna.
 
-## 5. Repo-rakenne
+## 5. Rebalance-strategiat: Eager vs Cooperative-sticky (KIP-429)
+
+Kun consumer groupin jäsenmäärä muuttuu, kaikkien partitioiden pitää joskus vaihtaa omistajaa. Kysymys on: **pysähtyykö koko ryhmä joka kerta, vai vain se osa joka oikeasti muuttuu?**
+
+- **Eager / klassinen** (`range`, `roundrobin`) — coordinator käskee *kaikkia* kuluttajia luopumaan *kaikista* partitioistaan ensin, jakaa uudelleen vasta sitten. Välissä yksikään partitio ei ole kenenkään luettavana — koko kulutus pysähtyy, vaikka muutos olisi pieni (esim. yksi worker neljästä lisätty).
+- **Cooperative-sticky (KIP-429)** — vain partitiot, jotka oikeasti vaihtavat omistajaa, revokoidaan. Loput jatkavat keskeytyksettä. Pienempi, kohdistetumpi katko.
+
+Dashboard tekee tämän näkyväksi kahdella tavalla:
+- **Tilabanneri** ("Rebalancing partition assignments…") ilmestyy aina rebalancen ajaksi, `aria-live="polite"`-yhteensopivana (sama kaava kuin muut tilailmoitukset, ks. osa 4).
+- **Partikkelivirran pysähdys** kohdistuu eager-tilassa kaikkiin neljään putkeen; cooperative-sticky-tilassa vain niihin partitioihin, jotka `guardrail_consumer.py`:n `on_assign`/`on_revoke`-callbackit raportoivat siirtyviksi (`rebalance-events`-topic).
+
+Strategian vaihto (dashboardin "Rebalance-strategia"-valitsin) näyttää kopioitavan komennon samalla periaatteella kuin kuluttajaskaalaus — vaihto vaatii kontin uudelleenkäynnistyksen (`partition.assignment.strategy` on Consumer-konfiguraatio, ei ajonaikana muutettavissa):
+
+```bash
+ASSIGNMENT_STRATEGY=range docker compose up -d --build guardrail-consumer
+```
+
+## 6. Idempotenssi ja duplikaattien suodatus
+
+At-least-once (osa 3) tarkoittaa juuri sitä: viesti käsitellään *vähintään* kerran, joskus useammin. Tämä ei ole korjattava bugi — se on tietoinen valinta (mieluummin kaksoiskäsittely kuin kadonnut BLOCK-päätös). Mutta duplikaatin pitää olla harmiton, ei vain "toivottavasti ei tapahdu": duplikaatti `ESCALATE`/`BLOCK` menisi ihmismoderaattorille kahdesti — sama viesti kahdesti hänen jonossaan. Dedup kytkeytyy siis suoraan guardrail-logiikkaan, ei ole irrallinen Kafka-oppitunti.
+
+`guardrail/dedup.py`:n `DedupCache` käyttää dedup-avaimena **(partition, offset)**-paria — ei erikseen keksittyä `message_id`-kenttää. Tämä on Kafkan oma, aidosti uniikki koordinaatti jokaiselle fyysiselle viestille, ja täsmälleen se koordinaatti jonka Kafka itse käyttää seuraamaan missä kohtaa lokia kuluttaja on. Kun `guardrail_consumer.py` havaitsee saman `(partition, offset)`-parin uudelleen, se ei julkaise päätöstä uudelleen output-topiciin — ainoastaan laskee sen `duplicate-events`-topiciin, jota dashboard näyttää laskurina ("Duplikaatteja suodatettu").
+
+**Rehellinen rajaus (liputa, älä piilota):** `DedupCache` on rajattu (500 viestiä) LRU-joukko *prosessin muistissa*. Se **ei selviä** `guardrail-consumer`-kontin omasta uudelleenkäynnistyksestä — silloin cache tyhjenee. Tuotannossa tarvitsisi joko pysyvän dedup-tallennuksen (esim. Redis/tietokanta avaimella `partition:offset` + TTL) tai Kafkan transaktionaalisen/exactly-once-tuottajan. Tämä demo näyttää periaatteen, ei täydellistä ratkaisua.
+
+## 7. Repo-rakenne
 
 ```
 ruuhkavahti/
@@ -77,7 +104,8 @@ ruuhkavahti/
 │   ├── vendor/refuse_dont_guess.py  # vendoroitu muuttumattomana, ks. osa 2
 │   ├── chat_rule.py             # uusi, saman muotoinen chat-moderointisääntö
 │   ├── pipeline.py              # koko päätösputki (ei Kafka-riippuvuutta, testattava)
-│   └── guardrail_consumer.py    # Kafka-kuluttaja, consumer group + manual commit
+│   ├── dedup.py                 # (partition, offset)-LRU, ei Kafka-riippuvuutta (ks. osa 6)
+│   └── guardrail_consumer.py    # Kafka-kuluttaja, consumer group + manual commit + rebalance-callbackit
 ├── dashboard/
 │   ├── backend/                     # FastAPI: WebSocket-silta Kafka-mittareista selaimeen
 │   └── frontend/src/components/
@@ -85,16 +113,19 @@ ruuhkavahti/
 │       ├── ParticleFlow3D.tsx        # Three.js-partikkelivirta, aria-hidden (data on muualla)
 │       ├── AccessibleDataTable.tsx   # piilotettu mutta painikkeella avattava <table>
 │       ├── LiveAnnouncer.tsx         # aria-live="polite" -ilmoitukset
+│       ├── RebalanceBanner.tsx       # rebalance-tilabanneri (ks. osa 5)
+│       ├── DuplicateCounter.tsx      # duplikaattilaskuri (ks. osa 6)
 │       ├── DecisionBarChart.tsx
 │       └── Controls.tsx
 ├── tests/
 │   ├── test_guardrail_logic.py  # yksikkötestit ilman Kafka-riippuvuutta
+│   ├── test_dedup.py            # DedupCache-yksikkötestit, ei Kafka-riippuvuutta
 │   ├── test_a11y.py             # axe-core dashboardille, ei myöskään Kafka-riippuvuutta
 │   └── requirements.txt
 └── README.md
 ```
 
-## 6. Ajaminen
+## 8. Ajaminen
 
 ### Ilman omaa konetta (esim. iPad / Chromebook) — GitHub Codespaces
 
@@ -117,6 +148,7 @@ open http://localhost:5173
 
 # aja pelkät guardrail-testit ilman Kafkaa
 python3 -m unittest tests/test_guardrail_logic.py -v
+python3 -m unittest tests/test_dedup.py -v
 
 # aja saavutettavuustesti (ei myöskään vaadi Kafkaa/backendia)
 cd dashboard/frontend && npm install && cd ../..
@@ -129,10 +161,11 @@ docker compose up -d --scale guardrail-consumer=4
 
 Dashboardin "Laukaise piikki" -nappi kutsuu producerin `/trigger-spike`-päätepistettä suoraan (aito live-kontrolli). Kuluttajamäärä-liukusäädin sen sijaan näyttää kopioitavan `docker compose --scale`-komennon eikä ohjaa Dockeria konttien sisältä — tietoinen valinta: `docker.sock`-mountti taustapalveluun olisi turvallisuusmielessä huono ratkaisu portfoliodemolle eikä olisi yhtä luotettava livetilanteessa. Dashboard näyttää silti aktiivisten kuluttajien todellisen, Kafkan ryhmämetadatasta luetun määrän.
 
-## 7. Tietoisesti rajattu ulos (liputa, älä piilota)
+## 9. Tietoisesti rajattu ulos (liputa, älä piilota)
 
 - **Todellinen toksisuusluokitin** → korvattu yksinkertaisella avainsanaskannauksella (`chat_rule.py`). Sama rajaus kuin alkuperäisessä repossa: ydin on turvakerros ja sen rakenne, ei sisällönluokittelun tarkkuus.
 - **Kafka-transaktiot / exactly-once** → tietoinen valinta at-least-once-semantiikan puolesta (ks. osa 3). Kaksoiskäsittely on hyväksyttävä riski tässä skenaariossa.
+- **Duplikaattisuodatus ei selviä consumerin uudelleenkäynnistyksestä** → `DedupCache` on prosessin muistissa, rajattu 500 viestiin. Tuotantotason vaihtoehto: pysyvä dedup-tallennus (Redis/tietokanta) tai Kafkan transaktionaalinen/exactly-once-tuottaja. Ks. osa 6.
 - **Autentikointi, TLS, tuotantotason monitorointi (Prometheus/Grafana)** → ei mukana, demo keskittyy yhteen tarinaan (lag + rebalance), ei yleiskäyttöiseen Kafka-hallintapaneeliin.
 - **axe-core kattaa automatisoidusti havaittavan** → automaattitestit löytävät n. 30-50 % WCAG-ongelmista tyypillisesti; manuaalinen ruudunlukijatestaus (VoiceOver/NVDA) puuttuu tästä repositoriosta, liputettu tässä eikä piiloteltu.
 

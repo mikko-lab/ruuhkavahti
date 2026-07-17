@@ -1,3 +1,5 @@
+export type AssignmentStrategy = "cooperative-sticky" | "range" | "roundrobin";
+
 export interface MetricsSnapshot {
   lag: Record<string, number>;
   total_lag: number;
@@ -7,6 +9,10 @@ export interface MetricsSnapshot {
   latency_p95_ms: number;
   producer_mode: "baseline" | "spike";
   producer_rate: number;
+  rebalancing: boolean;
+  transitioning_partitions: number[];
+  assignment_strategy: AssignmentStrategy;
+  duplicates_filtered: number;
 }
 
 export const EMPTY_SNAPSHOT: MetricsSnapshot = {
@@ -18,4 +24,8 @@ export const EMPTY_SNAPSHOT: MetricsSnapshot = {
   latency_p95_ms: 0,
   producer_mode: "baseline",
   producer_rate: 0,
+  rebalancing: false,
+  transitioning_partitions: [],
+  assignment_strategy: "cooperative-sticky",
+  duplicates_filtered: 0,
 };

@@ -39,6 +39,8 @@ services:
       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic approved-messages --partitions 1 --replication-factor 1 &&
       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic escalated-messages --partitions 1 --replication-factor 1 &&
       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic blocked-messages --partitions 1 --replication-factor 1 &&
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic rebalance-events --partitions 1 --replication-factor 1 &&
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic duplicate-events --partitions 1 --replication-factor 1 &&
       kafka-topics --bootstrap-server kafka:29092 --list
       "
 
@@ -58,6 +60,9 @@ services:
         condition: service_completed_successfully
     environment:
       KAFKA_BOOTSTRAP: kafka:29092
+      # "cooperative-sticky" (KIP-429, oletus) tai "range" (klassinen eager) —
+      # vaihto vaatii kontin uudelleenkäynnistyksen, ks. README "Rebalance-strategiat".
+      ASSIGNMENT_STRATEGY: cooperative-sticky
 
   dashboard-backend:
     build: ./dashboard/backend

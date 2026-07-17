@@ -1,17 +1,23 @@
 """
 Ruuhkavahti — dashboard-mittarit: consumer lag, aktiivisten kuluttajien määrä,
-päätösjakauma ja läpimenoajan p50/p95.
+päätösjakauma, läpimenoajan p50/p95, rebalance-tila ja duplikaattilaskuri.
 
-Kaksi taustasäiettä:
+Taustasäikeet:
   - lag_poll_loop: kysyy Kafkalta (AdminClient) guardrail-groupin committed
     offsetit + partitioiden korkeimmat offsetit kerran sekunnissa, laskee
     lag = high_watermark - committed per partitio (ks. README "Consumer lag
-    mittarina"). Kysyy myös ryhmän jäsenmäärän (= aktiiviset kuluttajat, oikea
-    Kafka-tila, ei UI:n väitetty arvo).
+    mittarina"). Kysyy myös ryhmän jäsenmäärän ja ryhmän tilan (STABLE vs.
+    PREPARING/COMPLETING_REBALANCING) — jälkimmäinen on autoritatiivinen
+    signaali siitä, onko ryhmä juuri nyt rebalancoimassa.
   - decision_consumer_loop: kuluttaa approved/escalated/blocked-topicit omalla,
-    guardrail-groupista erillisellä group.id:llä (ei vaikuta lag-mittariin
-    eikä kilpaile guardrail-workereiden kanssa), laskee jakauman ja
+    guardrail-groupista erillisellä group.id:llä, laskee jakauman ja
     latency_ms-jakauman p50/p95:tä varten.
+  - rebalance_events_consumer_loop: kuluttaa guardrail_consumer.py:n
+    julkaisemat on_assign/on_revoke-tapahtumat, päättelee mitkä partitiot
+    ovat juuri nyt siirtymässä (revoke:ssa lisätty, assign:ssa poistettu) —
+    tätä käytetään cooperative-sticky-tilan osittaiseen pysähdysvisualisointiin.
+  - duplicate_events_consumer_loop: laskee guardrail_consumer.py:n
+    suodattamat duplikaatit.
 """
 
 from __future__ import annotations
@@ -36,6 +42,7 @@ from confluent_kafka.admin import _ConsumerGroupTopicPartitions as ConsumerGroup
 TOPIC = "viewer-messages"
 NUM_PARTITIONS = 4
 GUARDRAIL_GROUP_ID = "guardrail-group"
+REBALANCING_STATES = {"PREPARING_REBALANCING", "COMPLETING_REBALANCING"}
 
 
 class MetricsState:
@@ -47,6 +54,10 @@ class MetricsState:
         self._latencies: deque[float] = deque(maxlen=2000)
         self.producer_mode = "baseline"
         self.producer_rate = 0
+        self.rebalancing = False
+        self.transitioning_partitions: set[int] = set()
+        self.assignment_strategy = "cooperative-sticky"
+        self.duplicates_filtered = 0
 
     def snapshot(self) -> dict:
         with self._lock:
@@ -67,6 +78,10 @@ class MetricsState:
                 "latency_p95_ms": pct(0.95),
                 "producer_mode": self.producer_mode,
                 "producer_rate": self.producer_rate,
+                "rebalancing": self.rebalancing,
+                "transitioning_partitions": sorted(self.transitioning_partitions),
+                "assignment_strategy": self.assignment_strategy,
+                "duplicates_filtered": self.duplicates_filtered,
             }
 
     def update_producer_status(self, mode: str, rate: int) -> None:
@@ -83,6 +98,24 @@ class MetricsState:
         with self._lock:
             self.lag = lag_by_partition
             self.active_consumers = active_consumers
+
+    def update_group_state(self, state_name: str) -> None:
+        with self._lock:
+            self.rebalancing = state_name in REBALANCING_STATES
+            if not self.rebalancing:
+                self.transitioning_partitions.clear()
+
+    def apply_rebalance_event(self, event: str, partitions: list[int], strategy: str) -> None:
+        with self._lock:
+            self.assignment_strategy = strategy
+            if event == "revoke":
+                self.transitioning_partitions.update(partitions)
+            elif event == "assign":
+                self.transitioning_partitions.difference_update(partitions)
+
+    def record_duplicate(self) -> None:
+        with self._lock:
+            self.duplicates_filtered += 1
 
 
 def lag_poll_loop(state: MetricsState, bootstrap: str, stop_event: Event) -> None:
@@ -115,6 +148,7 @@ def lag_poll_loop(state: MetricsState, bootstrap: str, stop_event: Event) -> Non
             active = len(desc.members)
 
             state.update_lag(lag, active)
+            state.update_group_state(desc.state.name)
         except Exception as exc:  # demo-taustasäie: virhe ei saa kaataa dashboardia
             print(f"lag-poll-virhe: {exc}")
         time.sleep(1.0)
@@ -134,6 +168,39 @@ def decision_consumer_loop(state: MetricsState, bootstrap: str, stop_event: Even
             continue
         data = json.loads(msg.value().decode("utf-8"))
         state.record_decision(data["decision"], data.get("latency_ms", 0.0))
+    consumer.close()
+
+
+def rebalance_events_consumer_loop(state: MetricsState, bootstrap: str, stop_event: Event) -> None:
+    consumer = Consumer({
+        "bootstrap.servers": bootstrap,
+        "group.id": "ruuhkavahti-dashboard-rebalance-events",
+        "auto.offset.reset": "latest",
+        "enable.auto.commit": True,
+    })
+    consumer.subscribe(["rebalance-events"])
+    while not stop_event.is_set():
+        msg = consumer.poll(timeout=1.0)
+        if msg is None or msg.error():
+            continue
+        data = json.loads(msg.value().decode("utf-8"))
+        state.apply_rebalance_event(data["event"], data["partitions"], data["strategy"])
+    consumer.close()
+
+
+def duplicate_events_consumer_loop(state: MetricsState, bootstrap: str, stop_event: Event) -> None:
+    consumer = Consumer({
+        "bootstrap.servers": bootstrap,
+        "group.id": "ruuhkavahti-dashboard-duplicate-events",
+        "auto.offset.reset": "latest",
+        "enable.auto.commit": True,
+    })
+    consumer.subscribe(["duplicate-events"])
+    while not stop_event.is_set():
+        msg = consumer.poll(timeout=1.0)
+        if msg is None or msg.error():
+            continue
+        state.record_duplicate()
     consumer.close()
 
 

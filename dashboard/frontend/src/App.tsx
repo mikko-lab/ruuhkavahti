@@ -4,6 +4,8 @@ import { DecisionBarChart } from "./components/DecisionBarChart";
 import { Controls } from "./components/Controls";
 import { LiveAnnouncer } from "./components/LiveAnnouncer";
 import { AccessibleDataTable } from "./components/AccessibleDataTable";
+import { RebalanceBanner } from "./components/RebalanceBanner";
+import { DuplicateCounter } from "./components/DuplicateCounter";
 import { useMetricsSocket } from "./useMetricsSocket";
 import { usePrefersReducedMotion } from "./usePrefersReducedMotion";
 
@@ -22,6 +24,7 @@ export default function App() {
       </header>
 
       <LiveAnnouncer snapshot={snapshot} />
+      <RebalanceBanner snapshot={snapshot} />
 
       <main className="app-main">
         {!reducedMotion && <ParticleFlow3D snapshot={snapshot} />}
@@ -40,6 +43,7 @@ export default function App() {
             ))}
           </div>
           <DecisionBarChart snapshot={snapshot} />
+          <DuplicateCounter snapshot={snapshot} />
           <Controls snapshot={snapshot} />
           <AccessibleDataTable snapshot={snapshot} />
         </aside>
