@@ -45,3 +45,21 @@ Where else have you seen "flashy" and "accessible" treated as the same design pr
 #Accessibility #WebGL #FrontendEngineering
 ```
 
+## Kolmas hook: "rebalancing, näkyvänä"
+
+Kolmas, viimeinen postaus samasta demosta — Kafkan sisäinen mekaniikka, jota useimmat dashboardit eivät koskaan näytä.
+
+**Kuva/klippi:** dashboardin tilabanneri ("Rebalancing partition assignments…") näkyvissä skaalaushetkellä, mieluiten kaksi rinnakkaista klippiä/kuvaa — sama skaalaus eager- ja cooperative-sticky-strategialla, jotta ero (kaikki putket pysähtyvät vs. vain kaksi) näkyy suoraan vierekkäin.
+
+```
+Most Kafka demos treat rebalancing as an implementation detail you're not supposed to see. This one puts it on screen — and shows you exactly which strategy freezes two pipes instead of four.
+
+→ Cooperative-sticky (KIP-429) revokes only the partitions that actually change owners; classic eager assignors revoke everything, every time — toggle it live and watch the difference in the particle flow
+→ At-least-once delivery makes duplicates a certainty, not an edge case — a (partition, offset)-keyed cache filters them before a moderation decision reaches a human twice, using Kafka's own coordinates instead of inventing a message ID
+→ Both honestly scoped, not oversold: the strategy swap needs a restart (shown as a copy-paste command, no hidden automation), and the dedup cache is process-memory only — flagged in the README, not glossed over
+
+What's one piece of distributed-systems "internals" you wish more dashboards actually showed instead of hiding?
+
+#ApacheKafka #DistributedSystems #BackendEngineering
+```
+
