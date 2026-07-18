@@ -59,9 +59,11 @@ Guardrail-logiikka pohjautuu (osittain vendoroituna, osittain uutena) repoon [`m
 ```bash
 docker compose up -d --build
 # odota että kafka-init on luonut topicit (docker compose logs kafka-init)
+```
 
-open http://localhost:5173
+Kun stack on käynnissä, avaa live-dashboard: **[http://localhost:5173](http://localhost:5173)** (koko UI säätimineen — Demo Mode -tekstitetty versio: [http://localhost:5173/?demo=true](http://localhost:5173/?demo=true)).
 
+```bash
 # yksikkö- ja saavutettavuustestit ilman Kafkaa
 python3 -m unittest tests/test_guardrail_logic.py tests/test_dedup.py -v
 cd dashboard/frontend && npm install && cd ../..
