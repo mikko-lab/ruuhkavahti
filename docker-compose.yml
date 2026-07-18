@@ -73,6 +73,7 @@ services:
       - "8000:8000"
     environment:
       KAFKA_BOOTSTRAP: kafka:29092
+      VIDEO_EXPORTER_URL: http://video-exporter:8002
 
   dashboard-frontend:
     build: ./dashboard/frontend
@@ -80,3 +81,15 @@ services:
       - "5173:5173"
     depends_on:
       - dashboard-backend
+
+  # Erillinen, kevyt palvelu "Export Video" -napille (ks. README "Demo Mode"):
+  # ajaa ?demo=true-käsikirjoituksen oikealla Chromiumilla Playwrightin
+  # kautta, nauhoittaa 1920x1080-videon ja muuntaa sen MP4:ksi ffmpegillä.
+  # Ei ole osa ydin-Kafka-putkea, vain valinnainen presenter-työkalu.
+  video-exporter:
+    build: ./video-exporter
+    depends_on:
+      - dashboard-frontend
+    environment:
+      FRONTEND_URL: http://dashboard-frontend:5173
+      DEMO_DURATION_S: "38"

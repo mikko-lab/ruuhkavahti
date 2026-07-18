@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AssignmentStrategy, MetricsSnapshot } from "../types";
+
+type ExportStatus = "idle" | "running" | "done" | "error";
 
 // Tyhjä = sama origin kuin sivu itse; Vite proxyaa /api:n backendille
 // (ks. vite.config.ts), joten selain ei tarvitse koskaan backendin
@@ -19,6 +21,15 @@ export function Controls({ snapshot, demoMode = false }: ControlsProps) {
   const [assignorCommand, setAssignorCommand] = useState("");
   const [assignorCopied, setAssignorCopied] = useState(false);
   const [triggering, setTriggering] = useState(false);
+  const [exportStatus, setExportStatus] = useState<ExportStatus>("idle");
+  const [exportError, setExportError] = useState<string | null>(null);
+  const pollRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) window.clearInterval(pollRef.current);
+    };
+  }, []);
 
   async function handleTriggerSpike() {
     setTriggering(true);
@@ -48,6 +59,36 @@ export function Controls({ snapshot, demoMode = false }: ControlsProps) {
     if (!text) return;
     await navigator.clipboard.writeText(text);
     setCopied(true);
+  }
+
+  // Export Video: ajaa ?demo=true-käsikirjoituksen erillisessä
+  // video-exporter-palvelussa (oikea Chromium + Playwright, ei tämä sivu
+  // itse), joten sama ~43s nauhoitus (ks. demoScript.ts) tuottaa joka
+  // kerta identtisen MP4:n ilman OBS:ää. Pollaa tilaa kunnes valmis.
+  async function handleExportVideo() {
+    setExportError(null);
+    setExportStatus("running");
+    try {
+      await fetch(`${API_BASE}/api/export-video`, { method: "POST" });
+    } catch {
+      setExportStatus("error");
+      setExportError("Nauhoituksen käynnistys epäonnistui — onko video-exporter käynnissä?");
+      return;
+    }
+    pollRef.current = window.setInterval(async () => {
+      try {
+        const r = await fetch(`${API_BASE}/api/export-video/status`);
+        const data = await r.json();
+        setExportStatus(data.status);
+        if (data.status === "error") setExportError(data.error ?? "Tuntematon virhe");
+        if (data.status === "done" || data.status === "error") {
+          if (pollRef.current) window.clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+      } catch {
+        // väliaikainen verkkovirhe pollauksessa — yritetään uudelleen seuraavalla kierroksella
+      }
+    }, 2000);
   }
 
   // Demo Mode: piikki laukeaa automaattisesti (ks. useDemoMode.ts) ja
@@ -114,6 +155,24 @@ export function Controls({ snapshot, demoMode = false }: ControlsProps) {
               {assignorCopied ? "Kopioitu" : "Kopioi"}
             </button>
           </div>
+        )}
+      </div>
+
+      <div className="export-video-control">
+        <button
+          className="export-video-button"
+          onClick={handleExportVideo}
+          disabled={exportStatus === "running"}
+        >
+          {exportStatus === "running" ? "Nauhoitetaan… (~45 s)" : "Export Video"}
+        </button>
+        {exportStatus === "done" && (
+          <a className="export-video-download" href={`${API_BASE}/api/export-video/download`}>
+            Lataa ruuhkavahti-demo.mp4
+          </a>
+        )}
+        {exportStatus === "error" && (
+          <p className="export-video-error">Virhe: {exportError}</p>
         )}
       </div>
 

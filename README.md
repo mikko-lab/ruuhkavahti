@@ -12,7 +12,7 @@
 
 ![Demo: piikki + lag-palautuminen](docs/demo.gif)
 
-*(GIF puuttuu vielä toistaiseksi. `?demo=true` (ks. "Demo Mode" alla) tuottaa toistettavan käsikirjoituksen OBS-nauhoitusta varten; automaattinen Playwright-pohjainen MP4-vienti napista on vielä tekemättä. Liputettu, ei piilotettu.)*
+*(GIF puuttuu vielä toistaiseksi. Sisältö on nyt tuotettavissa "Export Video" -napilla (ks. "Demo Mode" alla), joka nauhoittaa `?demo=true`-käsikirjoituksen automaattisesti 1080p MP4:ksi — GIF-muunnos MP4:stä on jäljellä oleva viimeistelyaskel. Liputettu, ei piilotettu.)*
 
 ## Mitä tämä osoittaa
 
@@ -77,6 +77,8 @@ Dashboardin "Laukaise piikki" -nappi kutsuu producerin `/trigger-spike`-päätep
 ### Demo Mode (yhden oton nauhoitusta varten)
 
 `http://localhost:5173/?demo=true` käynnistää kiinteän ~38 sekunnin käsikirjoituksen (`dashboard/frontend/src/demoScript.ts`), jotta OBS-nauhoitus toistuu identtisenä joka kerta: piikki laukeaa automaattisesti t=5s, fade-tekstitykset seuraavat skriptiä (`aria-hidden`, eivät toistu ruudunlukijalle), manuaaliset kontrollit piiloutuvat, ja 3D-kameran kiertoliike jäädytetään — liike syntyy vain datasta. Kunnioittaa `prefers-reduced-motion`-asetusta normaalisti. Kuluttajaskaalaus (`docker compose up -d --scale guardrail-consumer=4`) on yhä presenterin oma manuaalinen askel toisessa terminaalissa — tekstitys "Scaling consumer group…" on ajoitusvihje, ei automaatio (sama `docker.sock`-rajaus kuin yllä). Harjoittele ajoitus kerran ennen varsinaista ottoa.
+
+**Export Video -nappi** (sidebarin alaosassa, ei näy demo-tilassa itsessään) tekee OBS:n tarpeettomaksi: se kutsuu erillistä `video-exporter`-palvelua (oma kontti, Playwright + Chromium + ffmpeg), joka ajaa `?demo=true`-käsikirjoituksen oikealla selaimella 1920×1080-resoluutiolla, nauhoittaa sen ja muuntaa H.264-MP4:ksi (~45 s kokonaiskesto, valmis tiedosto latautuu automaattisesti nappiin ilmestyvästä linkistä). Sama komento tuottaa identtisen videon joka kerta — ei manuaalista nauhoitusta, ei kameran/mikin asetteluja. `dashboard-backend` toimii ohuena proxynä (`/api/export-video`), sama periaate kuin muillekin kontrolleille.
 
 ## Tulokset
 

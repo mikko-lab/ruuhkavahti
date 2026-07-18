@@ -12,6 +12,10 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
+    // video-exporter navigoi tähän palvelimeen docker-compose-verkon sisäisellä
+    // nimellä "dashboard-frontend" (ks. video-exporter/main.py FRONTEND_URL),
+    // jonka Vite 5:n oletusarvoinen Host-otsikon tarkistus muuten hylkäisi.
+    allowedHosts: ["dashboard-frontend"],
     proxy: {
       "/ws": {
         target: "ws://dashboard-backend:8000",

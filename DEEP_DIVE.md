@@ -64,6 +64,8 @@ ruuhkavahti/
 ├── scripts/
 │   └── measure.py               # mittausskripti (ks. pääREADME "Tulokset") — ajaa oikeita
 │                                  kokeita pyörivää stackia vasten, kirjoittaa results.json:iin
+├── video-exporter/               # Export Video -napin backend: Playwright + Chromium + ffmpeg,
+│   └── main.py                   # nauhoittaa ?demo=true:n 1920x1080 MP4:ksi (ks. "Demo Mode")
 ├── producer/
 │   ├── producer.py              # baseline (~200 msg/s) / spike (~8000 msg/s, ~18s)
 │   └── requirements.txt

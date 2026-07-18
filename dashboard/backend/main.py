@@ -6,6 +6,10 @@ POST /api/trigger-spike - välittää piikin laukaisun producerille (aito live-k
 GET  /api/scale-command  - palauttaa kopioitavan `docker compose --scale`-komennon
                             valitulle kuluttajamäärälle (ks. README: ei docker.sock-
                             mounttia backendiin, tietoinen turvallisuusvalinta demolle)
+POST /api/export-video          - välittää videonauhoituksen käynnistyksen
+GET  /api/export-video/status   - välittää nauhoituksen tilan (idle/running/done/error)
+GET  /api/export-video/download - striimaa valmiin MP4:n selaimelle
+                            (ks. video-exporter/ — erillinen Playwright+ffmpeg-palvelu)
 """
 
 from __future__ import annotations
@@ -15,7 +19,7 @@ import os
 import threading
 
 import httpx
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from kafka_metrics import (
@@ -29,6 +33,7 @@ from kafka_metrics import (
 
 KAFKA_BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP", "localhost:9092")
 PRODUCER_URL = os.environ.get("PRODUCER_URL", "http://producer:8001")
+VIDEO_EXPORTER_URL = os.environ.get("VIDEO_EXPORTER_URL", "http://video-exporter:8002")
 
 app = FastAPI()
 app.add_middleware(
@@ -95,6 +100,33 @@ def assignor_command(strategy: str = "cooperative-sticky") -> dict:
             f"ASSIGNMENT_STRATEGY={strategy} docker compose up -d --build guardrail-consumer"
         )
     }
+
+
+@app.post("/api/export-video")
+async def export_video() -> dict:
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{VIDEO_EXPORTER_URL}/export", timeout=5.0)
+        return r.json()
+
+
+@app.get("/api/export-video/status")
+async def export_video_status() -> dict:
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{VIDEO_EXPORTER_URL}/status", timeout=5.0)
+        return r.json()
+
+
+@app.get("/api/export-video/download")
+async def export_video_download() -> Response:
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{VIDEO_EXPORTER_URL}/download", timeout=30.0)
+        if r.status_code != 200:
+            raise HTTPException(status_code=r.status_code, detail=r.text)
+        return Response(
+            content=r.content,
+            media_type="video/mp4",
+            headers={"Content-Disposition": "attachment; filename=ruuhkavahti-demo.mp4"},
+        )
 
 
 @app.websocket("/ws")
