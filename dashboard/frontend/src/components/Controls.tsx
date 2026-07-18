@@ -7,7 +7,12 @@ import { AssignmentStrategy, MetricsSnapshot } from "../types";
 // forwarded-URL:n takana.
 const API_BASE = (import.meta as any).env?.VITE_BACKEND_HTTP ?? "";
 
-export function Controls({ snapshot }: { snapshot: MetricsSnapshot }) {
+interface ControlsProps {
+  snapshot: MetricsSnapshot;
+  demoMode?: boolean;
+}
+
+export function Controls({ snapshot, demoMode = false }: ControlsProps) {
   const [desiredCount, setDesiredCount] = useState(1);
   const [scaleCommand, setScaleCommand] = useState("");
   const [scaleCopied, setScaleCopied] = useState(false);
@@ -43,6 +48,25 @@ export function Controls({ snapshot }: { snapshot: MetricsSnapshot }) {
     if (!text) return;
     await navigator.clipboard.writeText(text);
     setCopied(true);
+  }
+
+  // Demo Mode: piikki laukeaa automaattisesti (ks. useDemoMode.ts) ja
+  // kuluttajien skaalaus/strategian vaihto ovat presenterin omia,
+  // etukäteen valmisteltuja terminaalikomentoja (ks. README "Demo Mode") —
+  // manuaaliset napit/liukusäätimet/command-boxit vain veisivät tilaa
+  // siististä nauhoituksesta. Live-data (kuluttajamäärä, tila) pysyy näkyvissä.
+  if (demoMode) {
+    return (
+      <div className="controls controls--demo">
+        <div className="active-consumers active-consumers--demo">
+          Aktiiviset kuluttajat: <strong>{snapshot.active_consumers}</strong>
+        </div>
+        <div className="producer-status">
+          Tila: <strong>{snapshot.producer_mode === "spike" ? "PIIKKI" : "normaali"}</strong>
+          {" · "}~{snapshot.producer_rate.toLocaleString("fi-FI")} viestiä/s
+        </div>
+      </div>
+    );
   }
 
   return (

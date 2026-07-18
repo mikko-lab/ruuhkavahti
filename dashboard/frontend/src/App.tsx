@@ -6,18 +6,21 @@ import { LiveAnnouncer } from "./components/LiveAnnouncer";
 import { AccessibleDataTable } from "./components/AccessibleDataTable";
 import { RebalanceBanner } from "./components/RebalanceBanner";
 import { DuplicateCounter } from "./components/DuplicateCounter";
+import { DemoCaption } from "./components/DemoCaption";
 import { useMetricsSocket } from "./useMetricsSocket";
 import { usePrefersReducedMotion } from "./usePrefersReducedMotion";
+import { useDemoMode } from "./useDemoMode";
 
 export default function App() {
   const snapshot = useMetricsSocket();
   const reducedMotion = usePrefersReducedMotion();
+  const demo = useDemoMode();
   const partitions = Object.keys(snapshot.lag)
     .map(Number)
     .sort((a, b) => a - b);
 
   return (
-    <div className="app">
+    <div className={`app${demo.active ? " demo-mode" : ""}`}>
       <header className="app-header">
         <h1>Ruuhkavahti</h1>
         <p>Kafka-pohjainen reaaliaikainen guardrail-demo</p>
@@ -27,7 +30,7 @@ export default function App() {
       <RebalanceBanner snapshot={snapshot} />
 
       <main className="app-main">
-        {!reducedMotion && <ParticleFlow3D snapshot={snapshot} />}
+        {!reducedMotion && <ParticleFlow3D snapshot={snapshot} demoMode={demo.active} />}
 
         <aside className={reducedMotion ? "sidebar sidebar--full" : "sidebar"}>
           {reducedMotion && (
@@ -44,10 +47,12 @@ export default function App() {
           </div>
           <DecisionBarChart snapshot={snapshot} />
           <DuplicateCounter snapshot={snapshot} />
-          <Controls snapshot={snapshot} />
-          <AccessibleDataTable snapshot={snapshot} />
+          <Controls snapshot={snapshot} demoMode={demo.active} />
+          {!demo.active && <AccessibleDataTable snapshot={snapshot} />}
         </aside>
       </main>
+
+      {demo.active && <DemoCaption text={demo.caption} />}
     </div>
   );
 }

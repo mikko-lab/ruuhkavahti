@@ -12,7 +12,7 @@
 
 ![Demo: piikki + lag-palautuminen](docs/demo.gif)
 
-*(GIF puuttuu vielä toistaiseksi — tulossa Demo Mode + automaattisen `?demo=true` -videotallennuksen myötä. Liputettu, ei piilotettu.)*
+*(GIF puuttuu vielä toistaiseksi. `?demo=true` (ks. "Demo Mode" alla) tuottaa toistettavan käsikirjoituksen OBS-nauhoitusta varten; automaattinen Playwright-pohjainen MP4-vienti napista on vielä tekemättä. Liputettu, ei piilotettu.)*
 
 ## Mitä tämä osoittaa
 
@@ -73,6 +73,10 @@ docker compose up -d --scale guardrail-consumer=4
 ```
 
 Dashboardin "Laukaise piikki" -nappi kutsuu producerin `/trigger-spike`-päätepistettä suoraan (aito live-kontrolli). Kuluttajamäärä- ja strategiavalinnat näyttävät kopioitavan komennon sen sijaan että ohjaisivat Dockeria kontin sisältä — tietoinen turvallisuusvalinta, ei `docker.sock`-mounttia taustapalveluun.
+
+### Demo Mode (yhden oton nauhoitusta varten)
+
+`http://localhost:5173/?demo=true` käynnistää kiinteän ~38 sekunnin käsikirjoituksen (`dashboard/frontend/src/demoScript.ts`), jotta OBS-nauhoitus toistuu identtisenä joka kerta: piikki laukeaa automaattisesti t=5s, fade-tekstitykset seuraavat skriptiä (`aria-hidden`, eivät toistu ruudunlukijalle), manuaaliset kontrollit piiloutuvat, ja 3D-kameran kiertoliike jäädytetään — liike syntyy vain datasta. Kunnioittaa `prefers-reduced-motion`-asetusta normaalisti. Kuluttajaskaalaus (`docker compose up -d --scale guardrail-consumer=4`) on yhä presenterin oma manuaalinen askel toisessa terminaalissa — tekstitys "Scaling consumer group…" on ajoitusvihje, ei automaatio (sama `docker.sock`-rajaus kuin yllä). Harjoittele ajoitus kerran ennen varsinaista ottoa.
 
 ## Tulokset
 

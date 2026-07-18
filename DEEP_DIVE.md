@@ -75,15 +75,19 @@ ruuhkavahti/
 │   └── guardrail_consumer.py    # Kafka-kuluttaja, consumer group + manual commit + rebalance-callbackit
 ├── dashboard/
 │   ├── backend/                     # FastAPI: WebSocket-silta Kafka-mittareista selaimeen
-│   └── frontend/src/components/
-│       ├── LagGauge.tsx              # 2D-mittari — sekä oletusnäkymän sivupaneeli ETTÄ reduced-motion-fallback
-│       ├── ParticleFlow3D.tsx        # Three.js-partikkelivirta, aria-hidden (data on muualla)
-│       ├── AccessibleDataTable.tsx   # piilotettu mutta painikkeella avattava <table>
-│       ├── LiveAnnouncer.tsx         # aria-live="polite" -ilmoitukset
-│       ├── RebalanceBanner.tsx       # rebalance-tilabanneri
-│       ├── DuplicateCounter.tsx      # duplikaattilaskuri
-│       ├── DecisionBarChart.tsx
-│       └── Controls.tsx
+│   └── frontend/src/
+│       ├── demoScript.ts             # Demo Mode -aikajana (ks. pääREADME "Demo Mode")
+│       ├── useDemoMode.ts            # ?demo=true -hook: auto-piikki + tekstitykset
+│       └── components/
+│           ├── LagGauge.tsx              # 2D-mittari — sekä oletusnäkymän sivupaneeli ETTÄ reduced-motion-fallback
+│           ├── ParticleFlow3D.tsx        # Three.js-partikkelivirta, aria-hidden (data on muualla)
+│           ├── AccessibleDataTable.tsx   # piilotettu mutta painikkeella avattava <table>
+│           ├── LiveAnnouncer.tsx         # aria-live="polite" -ilmoitukset
+│           ├── RebalanceBanner.tsx       # rebalance-tilabanneri
+│           ├── DuplicateCounter.tsx      # duplikaattilaskuri
+│           ├── DemoCaption.tsx           # tekstitysoverlay Demo Modelle
+│           ├── DecisionBarChart.tsx
+│           └── Controls.tsx
 ├── tests/
 │   ├── test_guardrail_logic.py  # yksikkötestit ilman Kafka-riippuvuutta
 │   ├── test_dedup.py            # DedupCache-yksikkötestit, ei Kafka-riippuvuutta
