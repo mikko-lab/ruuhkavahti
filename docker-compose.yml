@@ -92,4 +92,4 @@ services:
       - dashboard-frontend
     environment:
       FRONTEND_URL: http://dashboard-frontend:5173
-      DEMO_DURATION_S: "38"
+      DEMO_DURATION_S: "46"

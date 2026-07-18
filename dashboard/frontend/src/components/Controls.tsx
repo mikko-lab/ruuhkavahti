@@ -63,7 +63,7 @@ export function Controls({ snapshot, demoMode = false }: ControlsProps) {
 
   // Export Video: ajaa ?demo=true-käsikirjoituksen erillisessä
   // video-exporter-palvelussa (oikea Chromium + Playwright, ei tämä sivu
-  // itse), joten sama ~43s nauhoitus (ks. demoScript.ts) tuottaa joka
+  // itse), joten sama ~46s nauhoitus (ks. demoScript.ts) tuottaa joka
   // kerta identtisen MP4:n ilman OBS:ää. Pollaa tilaa kunnes valmis.
   async function handleExportVideo() {
     setExportError(null);
@@ -164,7 +164,7 @@ export function Controls({ snapshot, demoMode = false }: ControlsProps) {
           onClick={handleExportVideo}
           disabled={exportStatus === "running"}
         >
-          {exportStatus === "running" ? "Nauhoitetaan… (~45 s)" : "Export Video"}
+          {exportStatus === "running" ? "Nauhoitetaan… (~50 s)" : "Export Video"}
         </button>
         {exportStatus === "done" && (
           <a className="export-video-download" href={`${API_BASE}/api/export-video/download`}>

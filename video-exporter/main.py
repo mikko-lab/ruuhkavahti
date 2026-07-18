@@ -28,10 +28,11 @@ from fastapi.responses import FileResponse
 from playwright.sync_api import sync_playwright
 
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://dashboard-frontend:5173")
-DEMO_DURATION_S = float(os.environ.get("DEMO_DURATION_S", "38"))
-# Verkon asettuminen ennen kelloa + viimeisen tekstityksen ("System stable")
-# näkymisaika ennen kontekstin sulkemista.
-PRE_ROLL_S = 2.0
+DEMO_DURATION_S = float(os.environ.get("DEMO_DURATION_S", "46"))
+# Viimeisen tekstityksen ("System stable" / lopputekstitys) näkymisaika
+# ennen kontekstin sulkemista. Alun latausaika EI ole kiinteä arvo (ks. alla,
+# _record_and_convert) — sivun/WebGL-alustus headless-kontissa vie
+# vaihtelevan ajan, joten se mitataan odottamalla oikeaa DOM-signaalia.
 POST_ROLL_S = 3.0
 
 EXPORT_DIR = Path("/app/exports")
@@ -63,8 +64,16 @@ def _record_and_convert() -> None:
                 record_video_size={"width": 1920, "height": 1080},
             )
             page = context.new_page()
-            page.goto(f"{FRONTEND_URL}/?demo=true", wait_until="networkidle")
-            time.sleep(PRE_ROLL_S)
+            # Videon nauhoitus alkaa jo tästä (page.video), ei goto()-kutsusta —
+            # välissä oleva "about:blank" näkyy nauhalla vaaleana/tyhjänä hetkenä.
+            record_start = time.monotonic()
+            page.goto(f"{FRONTEND_URL}/?demo=true", wait_until="domcontentloaded")
+            # Odotetaan oikeaa sisältöä (ensimmäinen tekstitys näkyviin) sen
+            # sijaan että arvattaisiin kiinteä latausaika — sivun/WebGL-
+            # alustus headless-kontissa vie vaihtelevan ajan. Mitattu, ei
+            # arvattu leikkauskohta lopulliseen videoon (ks. alla).
+            page.wait_for_selector(".demo-caption-text--visible", timeout=15_000)
+            trim_start = max(0.0, time.monotonic() - record_start - 0.1)
             time.sleep(DEMO_DURATION_S)
             time.sleep(POST_ROLL_S)
             video = page.video
@@ -79,6 +88,7 @@ def _record_and_convert() -> None:
         result = subprocess.run(
             [
                 "ffmpeg", "-y",
+                "-ss", str(trim_start),
                 "-i", str(webm_path),
                 "-c:v", "libx264",
                 "-pix_fmt", "yuv420p",
@@ -97,6 +107,7 @@ def _record_and_convert() -> None:
             _state["status"] = "done"
             _state["finished_at"] = time.time()
             _state["download_url"] = "/download"
+            _state["leading_load_trimmed_s"] = round(trim_start, 2)
             _state["error"] = None
     except Exception as exc:  # taustasäie: virhe ei saa jäädä hiljaiseksi
         with _lock:
