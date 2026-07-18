@@ -12,7 +12,7 @@
 
 ![Demo: piikki + lag-palautuminen](docs/demo.gif)
 
-*(GIF puuttuu vielä toistaiseksi. Sisältö on nyt tuotettavissa "Export Video" -napilla (ks. "Demo Mode" alla), joka nauhoittaa `?demo=true`-käsikirjoituksen automaattisesti 1080p MP4:ksi — GIF-muunnos MP4:stä on jäljellä oleva viimeistelyaskel. Liputettu, ei piilotettu.)*
+*Katso koko 50 sekunnin nauhoitus tekstityksin: [docs/demo.mp4](docs/demo.mp4). Molemmat on tuotettu automaattisesti "Export Video" -napilla, ks. "Demo Mode" alla — sama, toistettavissa oleva käsikirjoitus joka kerta, ei käsin nauhoitettu.*
 
 ## Mitä tämä osoittaa
 
