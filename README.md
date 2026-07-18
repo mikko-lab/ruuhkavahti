@@ -108,15 +108,19 @@ ruuhkavahti/
 │   └── guardrail_consumer.py    # Kafka-kuluttaja, consumer group + manual commit + rebalance-callbackit
 ├── dashboard/
 │   ├── backend/                     # FastAPI: WebSocket-silta Kafka-mittareista selaimeen
-│   └── frontend/src/components/
-│       ├── LagGauge.tsx              # 2D-mittari — sekä oletusnäkymän sivupaneeli ETTÄ reduced-motion-fallback
-│       ├── ParticleFlow3D.tsx        # Three.js-partikkelivirta, aria-hidden (data on muualla)
-│       ├── AccessibleDataTable.tsx   # piilotettu mutta painikkeella avattava <table>
-│       ├── LiveAnnouncer.tsx         # aria-live="polite" -ilmoitukset
-│       ├── RebalanceBanner.tsx       # rebalance-tilabanneri (ks. osa 5)
-│       ├── DuplicateCounter.tsx      # duplikaattilaskuri (ks. osa 6)
-│       ├── DecisionBarChart.tsx
-│       └── Controls.tsx
+│   └── frontend/src/
+│       ├── demoScript.ts             # Demo Mode -aikajana (ks. osa 9)
+│       ├── useDemoMode.ts            # ?demo=true -hook: auto-piikki + tekstitykset
+│       └── components/
+│           ├── LagGauge.tsx              # 2D-mittari — sekä oletusnäkymän sivupaneeli ETTÄ reduced-motion-fallback
+│           ├── ParticleFlow3D.tsx        # Three.js-partikkelivirta, aria-hidden (data on muualla)
+│           ├── AccessibleDataTable.tsx   # piilotettu mutta painikkeella avattava <table>
+│           ├── LiveAnnouncer.tsx         # aria-live="polite" -ilmoitukset
+│           ├── RebalanceBanner.tsx       # rebalance-tilabanneri (ks. osa 5)
+│           ├── DuplicateCounter.tsx      # duplikaattilaskuri (ks. osa 6)
+│           ├── DemoCaption.tsx           # tekstitysoverlay (ks. osa 9)
+│           ├── DecisionBarChart.tsx
+│           └── Controls.tsx
 ├── tests/
 │   ├── test_guardrail_logic.py  # yksikkötestit ilman Kafka-riippuvuutta
 │   ├── test_dedup.py            # DedupCache-yksikkötestit, ei Kafka-riippuvuutta
@@ -161,7 +165,25 @@ docker compose up -d --scale guardrail-consumer=4
 
 Dashboardin "Laukaise piikki" -nappi kutsuu producerin `/trigger-spike`-päätepistettä suoraan (aito live-kontrolli). Kuluttajamäärä-liukusäädin sen sijaan näyttää kopioitavan `docker compose --scale`-komennon eikä ohjaa Dockeria konttien sisältä — tietoinen valinta: `docker.sock`-mountti taustapalveluun olisi turvallisuusmielessä huono ratkaisu portfoliodemolle eikä olisi yhtä luotettava livetilanteessa. Dashboard näyttää silti aktiivisten kuluttajien todellisen, Kafkan ryhmämetadatasta luetun määrän.
 
-## 9. Tietoisesti rajattu ulos (liputa, älä piilota)
+## 9. Demo Mode (yhden oton nauhoitusta varten)
+
+`http://localhost:5173/?demo=true` käynnistää kiinteän ~38 sekunnin käsikirjoituksen (`dashboard/frontend/src/demoScript.ts`), jotta OBS-nauhoitus toistuu identtisenä joka kerta:
+
+| Aika | Tapahtuu |
+|---|---|
+| 0–5 s | Normaalitila, ei toimenpiteitä |
+| 5 s | Piikki laukeaa **automaattisesti** (sama kutsu kuin "Laukaise piikki") |
+| 5–12 s | Lag kasvaa, partikkelivirta tihenee |
+| 12 s | Tekstitys "Scaling consumer group…" — presenterin oma vihje ajaa **ennalta valmisteltu** `docker compose up -d --scale guardrail-consumer=4` toisessa terminaalissa |
+| 13–16 s | Kafka rebalancoi — RebalanceBanner ja partikkelivirran pysähdys näkyvät oikeasti, eivät lavastettuna |
+| 16–31 s | Lag purkautuu, palautuminen |
+| 31–38 s | "System stable" |
+
+Demo Mode korostaa lag-mittaria ja rebalance-banneria (sininen/keltainen hehku), piilottaa manuaaliset kontrollit (napit, sliderit, kopioitavat komennot, datataulukon avauspainike) siistiä nauhoitusta varten, ja jäädyttää 3D-kameran hitaan kiertoliikkeen — liike syntyy vain datasta, ei kamerasta. Tekstitykset ovat `aria-hidden` (puhtaasti visuaalinen nauhoituslisä; dashboard on jo saavutettava ilman niitä) ja kunnioittavat `prefers-reduced-motion`-asetusta samoin kuin muu UI.
+
+**Huom:** skaalauskomento on yhä presenterin oma manuaalinen askel (ks. osa 8 — ei `docker.sock`-automaatiota), joten harjoittele ajoitus kerran ennen varsinaista ottoa.
+
+## 10. Tietoisesti rajattu ulos (liputa, älä piilota)
 
 - **Todellinen toksisuusluokitin** → korvattu yksinkertaisella avainsanaskannauksella (`chat_rule.py`). Sama rajaus kuin alkuperäisessä repossa: ydin on turvakerros ja sen rakenne, ei sisällönluokittelun tarkkuus.
 - **Kafka-transaktiot / exactly-once** → tietoinen valinta at-least-once-semantiikan puolesta (ks. osa 3). Kaksoiskäsittely on hyväksyttävä riski tässä skenaariossa.

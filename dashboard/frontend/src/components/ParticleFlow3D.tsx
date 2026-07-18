@@ -45,7 +45,12 @@ function buildDestCurve(bucket: Bucket): THREE.CatmullRomCurve3 {
   ]);
 }
 
-export function ParticleFlow3D({ snapshot }: { snapshot: MetricsSnapshot }) {
+interface ParticleFlow3DProps {
+  snapshot: MetricsSnapshot;
+  demoMode?: boolean;
+}
+
+export function ParticleFlow3D({ snapshot, demoMode = false }: ParticleFlow3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
@@ -219,8 +224,15 @@ export function ParticleFlow3D({ snapshot }: { snapshot: MetricsSnapshot }) {
         pools[bucket].scale.lerp(new THREE.Vector3(target, target, target), 0.05);
       }
 
-      const angle = clock.elapsedTime * 0.05;
-      camera.position.set(Math.sin(angle) * 14, 2.5, Math.cos(angle) * 14);
+      // Demo Mode: kamera pysyy paikallaan, liike syntyy vain datasta
+      // (ks. README "Demo Mode") — muuten hidas kierto tekee kohtauksesta
+      // elävämmän normaalikäytössä.
+      if (demoMode) {
+        camera.position.set(0, 2.5, 14);
+      } else {
+        const angle = clock.elapsedTime * 0.05;
+        camera.position.set(Math.sin(angle) * 14, 2.5, Math.cos(angle) * 14);
+      }
       camera.lookAt(1, 0, 0);
 
       renderer.render(scene, camera);

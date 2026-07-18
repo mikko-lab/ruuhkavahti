@@ -402,11 +402,70 @@ input:focus-visible,
   letter-spacing: 0.03em;
 }
 
+/* Demo Mode (?demo=true) — ks. README "Demo Mode". Korostaa lag-mittaria,
+   kuluttajamäärää ja rebalance-banneria; manuaaliset kontrollit piilotetaan
+   Controls.tsx:ssä (demoMode-propilla), ei täällä, koska niitä ei edes
+   renderöidä demo-tilassa. */
+.demo-mode .total-lag {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.4), 0 0 24px rgba(96, 165, 250, 0.15);
+}
+
+.demo-mode .rebalance-banner:not(:empty) {
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.5), 0 0 24px rgba(251, 191, 36, 0.2);
+}
+
+.controls--demo {
+  align-items: center;
+  text-align: center;
+}
+
+.active-consumers--demo {
+  font-size: 1.05rem;
+  color: #e5e7eb;
+}
+
+.demo-caption {
+  position: fixed;
+  left: 50%;
+  bottom: 2.5rem;
+  transform: translateX(-50%);
+  z-index: 20;
+  pointer-events: none;
+  max-width: min(90vw, 640px);
+}
+
+.demo-caption-text {
+  display: inline-block;
+  background: rgba(11, 15, 20, 0.82);
+  color: #ffffff;
+  font-size: 1.15rem;
+  font-weight: 600;
+  padding: 0.7rem 1.4rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  text-align: center;
+}
+
+.demo-caption-text--visible {
+  opacity: 1;
+}
+
+@media (max-width: 640px) {
+  .demo-caption-text {
+    font-size: 1rem;
+    padding: 0.6rem 1.1rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .gauge-progress,
   .gauge-needle,
   .decision-bar-fill,
-  .total-lag {
+  .total-lag,
+  .demo-caption-text {
     transition: none !important;
   }
 }
