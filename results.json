@@ -1,0 +1,272 @@
+{
+  "_meta": {
+    "measured_at": "2026-07-18",
+    "environment": "paikallinen kone (macOS, Docker Desktop), 1 Kafka-broker (KRaft), 4 partitiota topicilla viewer-messages",
+    "docker_version": "Docker version 29.6.1, build 8900f1d",
+    "spike_rate_msg_s_target": 8000,
+    "spike_duration_s_target": 18,
+    "baseline_rate_msg_s": 200,
+    "consumer_counts_tested": [
+      1,
+      2,
+      4
+    ],
+    "note": "Kaikki luvut yhden ajon tuloksia (n=1 per skenaario), ei toistettuja mittauksia keskiarvoineen. Rebalance-pausiajoissa havaittiin merkittävää ajojen välistä vaihtelua alustavissa (instrumentoimattomissa) ajoissa (0.76s-6.57s) -- lopulliset taulukon luvut ovat instrumentoiduista uusintaAjoista, mutta yhden ajon tuloksena, ei tilastollisesti vakautettuja. Toista scripts/measure.py tuoreiden lukujen saamiseksi."
+  },
+  "rebalance_pause_seconds": {
+    "cooperative-sticky": {
+      "group_coordinator_pause_seconds": 2.792,
+      "issue_to_stable_confirmed_seconds": 11.09,
+      "partitions_stopped": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "partitions_stopped_count": 4,
+      "num_partitions": 4,
+      "per_partition_pause_seconds": {
+        "0": 0.207,
+        "1": 0.393,
+        "2": 0.0,
+        "3": 0.307
+      },
+      "poll_interval_seconds": 0.05,
+      "scale": "1->4",
+      "note": "group_coordinator_pause_seconds = ensimmäisen ei-STABLE-havainnon ja ensimmäisen STABLE+4-jäsentä-havainnon välinen aika (50ms pollaus, AdminClient.describe_consumer_groups), sisältää broker-oletuksen group.initial.rebalance.delay.ms. Tämä EI ole sama asia kuin per-partitio kulutuskatko: partitions_stopped/per_partition_pause_seconds tulevat guardrail_consumer.py:n on_assign/on_revoke-callbackien julkaisemasta rebalance-events-topicista ja kertovat todellisen, partitiokohtaisen revoke->assign-ajan."
+    },
+    "range": {
+      "group_coordinator_pause_seconds": 2.647,
+      "issue_to_stable_confirmed_seconds": 11.107,
+      "partitions_stopped": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "partitions_stopped_count": 4,
+      "num_partitions": 4,
+      "per_partition_pause_seconds": {
+        "0": 0.494,
+        "1": 0.335,
+        "2": 0.417,
+        "3": 0.03
+      },
+      "poll_interval_seconds": 0.05,
+      "scale": "1->4",
+      "note": "group_coordinator_pause_seconds = ensimmäisen ei-STABLE-havainnon ja ensimmäisen STABLE+4-jäsentä-havainnon välinen aika (50ms pollaus, AdminClient.describe_consumer_groups), sisältää broker-oletuksen group.initial.rebalance.delay.ms. Tämä EI ole sama asia kuin per-partitio kulutuskatko: partitions_stopped/per_partition_pause_seconds tulevat guardrail_consumer.py:n on_assign/on_revoke-callbackien julkaisemasta rebalance-events-topicista ja kertovat todellisen, partitiokohtaisen revoke->assign-ajan."
+    }
+  },
+  "spike_runs": {
+    "1": {
+      "consumers": 1,
+      "sustained_throughput_msg_s": 7718.9,
+      "latency_p50_ms": 8.9,
+      "latency_p95_ms": 13.3,
+      "latency_sample_count": 127121,
+      "lag_recovery_seconds_after_spike_end": 3.35,
+      "spike_duration_measured_seconds": 18.35,
+      "lag_series_sample": [
+        [
+          0.23,
+          0,
+          "spike"
+        ],
+        [
+          2.39,
+          823,
+          "spike"
+        ],
+        [
+          4.52,
+          399,
+          "spike"
+        ],
+        [
+          6.65,
+          346,
+          "spike"
+        ],
+        [
+          8.84,
+          1067,
+          "spike"
+        ],
+        [
+          11.0,
+          317,
+          "spike"
+        ],
+        [
+          13.11,
+          183,
+          "spike"
+        ],
+        [
+          15.36,
+          1489,
+          "spike"
+        ],
+        [
+          17.51,
+          226,
+          "spike"
+        ],
+        [
+          19.69,
+          10,
+          "baseline"
+        ],
+        [
+          21.91,
+          0,
+          "baseline"
+        ]
+      ],
+      "peak_lag_observed_sampled": 1489,
+      "peak_lag_note": "poimittu ~2s pollausvälin harvennetusta lag_series_sample-listasta, todellinen huippu voi olla hieman korkeampi"
+    },
+    "2": {
+      "consumers": 2,
+      "sustained_throughput_msg_s": 7830.4,
+      "latency_p50_ms": 7.8,
+      "latency_p95_ms": 12.2,
+      "latency_sample_count": 126761,
+      "lag_recovery_seconds_after_spike_end": 3.88,
+      "spike_duration_measured_seconds": 18.03,
+      "lag_series_sample": [
+        [
+          0.19,
+          0,
+          "spike"
+        ],
+        [
+          2.38,
+          366,
+          "spike"
+        ],
+        [
+          4.56,
+          484,
+          "spike"
+        ],
+        [
+          6.75,
+          659,
+          "spike"
+        ],
+        [
+          8.91,
+          0,
+          "spike"
+        ],
+        [
+          11.08,
+          218,
+          "spike"
+        ],
+        [
+          13.38,
+          642,
+          "spike"
+        ],
+        [
+          15.54,
+          391,
+          "spike"
+        ],
+        [
+          17.7,
+          386,
+          "spike"
+        ],
+        [
+          19.85,
+          0,
+          "baseline"
+        ],
+        [
+          22.04,
+          0,
+          "baseline"
+        ]
+      ],
+      "peak_lag_observed_sampled": 659,
+      "peak_lag_note": "poimittu ~2s pollausvälin harvennetusta lag_series_sample-listasta, todellinen huippu voi olla hieman korkeampi"
+    },
+    "4": {
+      "consumers": 4,
+      "sustained_throughput_msg_s": 7704.3,
+      "latency_p50_ms": 7.0,
+      "latency_p95_ms": 9.2,
+      "latency_sample_count": 125711,
+      "lag_recovery_seconds_after_spike_end": 4.43,
+      "spike_duration_measured_seconds": 18.23,
+      "lag_series_sample": [
+        [
+          0.16,
+          0,
+          "spike"
+        ],
+        [
+          2.3,
+          400,
+          "spike"
+        ],
+        [
+          4.46,
+          207,
+          "spike"
+        ],
+        [
+          6.59,
+          400,
+          "spike"
+        ],
+        [
+          8.72,
+          0,
+          "spike"
+        ],
+        [
+          10.83,
+          0,
+          "spike"
+        ],
+        [
+          12.95,
+          400,
+          "spike"
+        ],
+        [
+          15.09,
+          336,
+          "spike"
+        ],
+        [
+          17.33,
+          125,
+          "spike"
+        ],
+        [
+          19.48,
+          10,
+          "baseline"
+        ],
+        [
+          21.66,
+          0,
+          "baseline"
+        ]
+      ],
+      "peak_lag_observed_sampled": 400,
+      "peak_lag_note": "poimittu ~2s pollausvälin harvennetusta lag_series_sample-listasta, todellinen huippu voi olla hieman korkeampi"
+    }
+  },
+  "duplicate_filter_test": {
+    "method": "docker pause (SIGSTOP-tyyppinen jäädytys, EI kontin restart) 50.0s yksittäiselle guardrail-consumer-instanssille ylittäen session.timeout.ms:n ilman prosessin uudelleenkäynnistystä, jolloin DedupCache säilyy muistissa (ks. README/DEEP_DIVE rajaus: restart tyhjentäisi cachen eikä tätä testiä silloin voisi ajaa näin).",
+    "messages_produced_during_test": 12251,
+    "duplicates_filtered": 0,
+    "note": "guardrail_consumer.py commitoi jokaisen viestin heti tuoton jälkeen (ei batch-commit), joten mahdollisten kesken jääneiden, ei-committoitujen viestien ikkuna on tyypillisesti korkeintaan yksi viesti per pause-sykli — tämä on odotettu tulos, ei mittausvirhe."
+  }
+}

@@ -62,7 +62,7 @@ services:
       KAFKA_BOOTSTRAP: kafka:29092
       # "cooperative-sticky" (KIP-429, oletus) tai "range" (klassinen eager) —
       # vaihto vaatii kontin uudelleenkäynnistyksen, ks. README "Rebalance-strategiat".
-      ASSIGNMENT_STRATEGY: cooperative-sticky
+      ASSIGNMENT_STRATEGY: ${ASSIGNMENT_STRATEGY:-cooperative-sticky}
 
   dashboard-backend:
     build: ./dashboard/backend
