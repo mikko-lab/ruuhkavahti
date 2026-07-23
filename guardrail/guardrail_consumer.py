@@ -34,12 +34,14 @@ from __future__ import annotations
 import json
 import os
 import time
+from contextlib import nullcontext as _nullcontext
 from datetime import datetime, timezone
 
 from confluent_kafka import Consumer, Producer, TopicPartition
 
 from dedup import DedupCache
 from vendor.refuse_dont_guess import Decision
+from vendor import tracing
 from pipeline import process_message
 
 KAFKA_BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP", "localhost:9092")
@@ -65,6 +67,9 @@ OUTPUT_TOPIC = {
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+tracer = tracing.init_tracing("guardrail-consumer")
 
 
 def main() -> None:
@@ -130,23 +135,38 @@ def main() -> None:
 
             received_at = time.time()
             source = json.loads(msg.value().decode("utf-8"))
-            result = process_message(source["content"])
-            sent_at = source["timestamp"]
 
-            out = {
-                "viewer_id": source["viewer_id"],
-                "timestamp": sent_at,
-                "decision": result.decision.value,
-                "reason": result.reason,
-                "latency_ms": round((received_at - _parse_ts(sent_at)) * 1000, 2),
-                "partition": partition,
-            }
-            producer.produce(
-                OUTPUT_TOPIC[result.decision],
-                key=source["viewer_id"].encode("utf-8"),
-                value=json.dumps(out).encode("utf-8"),
-            )
-            producer.poll(0)
+            # Head-based sampling: jatketaan tracea vain jos producer merkitsi
+            # tämän viestin jäljitettäväksi (ks. vendor/tracing.py). Muuten
+            # käsitellään normaalisti, ei avata uutta spania.
+            traced = tracing.has_trace_context(msg.headers())
+            ctx = tracing.extract_kafka_headers(msg.headers()) if traced else None
+            span_cm = tracer.start_as_current_span("guardrail.process_message", context=ctx) \
+                if traced else _nullcontext()
+
+            with span_cm as span:
+                result = process_message(source["content"])
+                sent_at = source["timestamp"]
+                out_headers = None
+                if traced:
+                    span.set_attribute("ruuhkavahti.decision", result.decision.value)
+                    out_headers = tracing.inject_kafka_headers()
+
+                out = {
+                    "viewer_id": source["viewer_id"],
+                    "timestamp": sent_at,
+                    "decision": result.decision.value,
+                    "reason": result.reason,
+                    "latency_ms": round((received_at - _parse_ts(sent_at)) * 1000, 2),
+                    "partition": partition,
+                }
+                producer.produce(
+                    OUTPUT_TOPIC[result.decision],
+                    key=source["viewer_id"].encode("utf-8"),
+                    value=json.dumps(out).encode("utf-8"),
+                    headers=out_headers,
+                )
+                producer.poll(0)
 
             # Vasta nyt commit: jos worker kaatuisi ennen tätä riviä, viesti
             # luetaan uudelleen seuraavalla käynnistyksellä (at-least-once) —

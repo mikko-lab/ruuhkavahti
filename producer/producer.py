@@ -25,6 +25,8 @@ import uvicorn
 from confluent_kafka import Producer
 from fastapi import FastAPI
 
+from vendor import tracing
+
 KAFKA_BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP", "localhost:9092")
 TOPIC = "viewer-messages"
 NUM_VIEWERS = int(os.environ.get("NUM_VIEWERS", "500"))
@@ -32,6 +34,12 @@ BASELINE_RATE = int(os.environ.get("BASELINE_RATE", "200"))
 SPIKE_RATE = int(os.environ.get("SPIKE_RATE", "8000"))
 SPIKE_DURATION_S = float(os.environ.get("SPIKE_DURATION_S", "18"))
 TICK_S = 0.05
+# Head-based sampling (ks. shared/tracing.py) — piikin ~8000 msg/s ei saa
+# jäljittää kokonaan, muuten Jaeger tukehtuu. 2 % riittää demoon näyttämään
+# koko putken producer -> guardrail -> analytics-consumer.
+TRACE_SAMPLE_RATE = float(os.environ.get("TRACE_SAMPLE_RATE", "0.02"))
+
+tracer = tracing.init_tracing("producer")
 
 CLEAN_SAMPLES = [
     "MAALIII!!! upeaa peliä",
@@ -135,7 +143,17 @@ def produce_loop() -> None:
                 "content": random_content(),
                 "channel": "chat",
             }
-            producer.produce(TOPIC, key=vid.encode("utf-8"), value=json.dumps(payload).encode("utf-8"))
+            headers = None
+            if random.random() < TRACE_SAMPLE_RATE:
+                with tracer.start_as_current_span("producer.emit_viewer_message") as span:
+                    span.set_attribute("ruuhkavahti.viewer_id", vid)
+                    headers = tracing.inject_kafka_headers()
+                    producer.produce(
+                        TOPIC, key=vid.encode("utf-8"),
+                        value=json.dumps(payload).encode("utf-8"), headers=headers,
+                    )
+            else:
+                producer.produce(TOPIC, key=vid.encode("utf-8"), value=json.dumps(payload).encode("utf-8"))
         producer.poll(0)
         elapsed = time.monotonic() - tick_start
         time.sleep(max(0.0, TICK_S - elapsed))

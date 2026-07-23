@@ -36,7 +36,12 @@ export const DEMO_CAPTIONS: DemoCaption[] = [
   { start: 17_500, end: 20_000, text: "Kafka rebalance in progress" },
   { start: 20_000, end: 29_000, text: "Additional consumers processing backlog" },
   { start: 29_000, end: 35_000, text: "Lag recovering" },
-  { start: 35_000, end: 42_000, text: "System stable" },
+  { start: 35_000, end: 38_000, text: "System stable" },
+  // Ilman tätä riviä koko "riippumaton kolmas kuluttaja" -tarina näkyy vain
+  // README:ssä/DEEP_DIVE.md:ssä, ei koskaan demossa itsessään — sidebarin
+  // AnalyticsConsumerPanel on jo näkyvissä koko demon ajan, tämä vain
+  // nimeää mitä siinä katsotaan juuri tässä kohtaa.
+  { start: 38_000, end: 42_000, text: "Independent analytics consumer reading the same stream" },
   // Lopputekstitys kiteyttää pointin: järjestelmä ei vain palautunut, vaan
   // ei koskaan lakannut tekemästä turvapäätöksiä piikin aikana.
   { start: 42_000, end: DEMO_DURATION_MS, text: "Deterministic guardrails stayed online during the spike" },

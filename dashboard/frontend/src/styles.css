@@ -328,6 +328,41 @@ body {
   font-weight: 700;
 }
 
+.analytics-consumer-panel {
+  background: #111827;
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+}
+
+.analytics-consumer-panel-label {
+  color: #9ca3af;
+  font-size: 0.75rem;
+}
+
+.analytics-consumer-panel-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.analytics-consumer-panel-row strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.analytics-consumer-panel-empty {
+  color: #6b7280;
+  font-style: italic;
+}
+
+.analytics-consumer-panel-warning {
+  color: #f59e0b;
+  font-size: 0.72rem;
+}
+
 .assignor-control {
   display: flex;
   flex-direction: column;

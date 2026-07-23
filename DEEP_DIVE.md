@@ -56,27 +56,50 @@ At-least-once (ks. "Oppimispolku" kohta 3) tarkoittaa juuri sitä: viesti käsit
 
 **Mitattu käyttäytyminen (ks. pääREADME "Tulokset"):** koska `guardrail_consumer.py` commitoi jokaisen viestin heti sen tuoton jälkeen (ei batch-commit), ei-committoitujen viestien ikkuna pausen/session-timeoutin aikana on käytännössä korkeintaan yksi viesti per rebalance-tapahtuma. Todellisessa testissä (`docker pause` 50 s, ei restart) 12 251 käsitellystä viestistä 0 päätyi duplikaatiksi — mekanismi on olemassa ja yksikkötestattu (`tests/test_dedup.py`), mutta tämän arkkitehtuurin luonnollinen duplikaattitiheys on erittäin matala juuri per-viesti-committing-mallin ansiosta.
 
+## Core platform -laajennus
+
+Alkuperäinen Ruuhkavahti oli yksi tuottaja + yksi kuluttajaryhmä + yksi dashboard. Kolme lisäystä osoittavat, mitä tapahtuu kun useampi itsenäinen palvelu alkaa jakaa samaa tapahtumavirtaa — "core platform" -ajattelun ydin:
+
+**1. Toinen, riippumaton kuluttaja samalle datalle.** `analytics-consumer` lukee samoja `approved/escalated/blocked-messages`-topiceja omalla consumer groupillaan (`analytics-group`), täysin riippumatta `dashboard-backend`:n omasta kulutuksesta. Se pitää eri retention-mallin (10s-ämpärit, 1h liukuva ikkuna) kuin dashboardin lyhyt live-näyttö — osoittaakseen että Kafka-topic on jaettu kontrakti, ei yhden kuluttajan yksityisomaisuutta. Tämä on täsmälleen se kuvio jolla toinen tiimi liittyisi olemassa olevaan tapahtumavirtaan koskematta alkuperäiseen putkeen.
+
+**2. Sisäinen palvelu-palvelu-autentikointi.** Kun `dashboard-backend` alkoi kutsua `analytics-consumer`:ia suoraan HTTP:n yli (`GET /api/platform-metrics` → `GET analytics-consumer:8003/metrics`), syntyi ensimmäinen kutsu joka ei kulje Kafkan kautta. `shared/internal_auth.py` allekirjoittaa pyynnön HMAC-SHA256:lla jaetulla salaisuudella (`INTERNAL_SHARED_SECRET`) — menetelmä + polku + aikaleima, aikaikkuna estää suorimman replay-hyökkäyksen. Katso moduulin oma "liputa älä piilota" -osio tarkoista rajoituksista (ei rotaatiota, ei TLS:ää, ei nonce-tallennusta).
+
+**3. Jaettu jäljitys (distributed tracing).** `shared/tracing.py` alustaa OpenTelemetrin OTLP-viejän Jaegeriin (`docker-compose.yml`:n `jaeger`-palvelu, UI portissa 16686). Koska Kafka ei kanna W3C trace-contextia natiivisti, traceparent kuljetetaan viestin headereissa producer → guardrail-consumer → analytics-consumer. Piikin ~8000 msg/s takia jäljitys on **head-based sampled** (`TRACE_SAMPLE_RATE`, oletus 2 %) — producer heittää kolikkoa per viesti ja downstream-palvelut jatkavat tracea vain jos header on läsnä, eivät koskaan avaa uutta itse. Näin Jaeger näkee edustavan otoksen koko putkesta ilman että se tukehtuu kuormaan.
+
+**Rehellinen rajanveto:** nämä kolme yhdessä osoittavat platform-primitiivit (jaettu tapahtumavirta, sisäinen auth, jäljitettävyys), eivät tee Ruuhkavahdista tuotantovalmiin sisäisen alustan — ei palvelurekisteriä, ei mTLS:ää, ei Jaeger-datan pysyvyyttä. Ks. `shared/internal_auth.py` ja `shared/tracing.py` docstringit täydestä rajoituslistasta.
+
 ## Repo-rakenne
 
 ```
 ruuhkavahti/
-├── docker-compose.yml          # Kafka (KRaft) + producer + guardrail-consumer + dashboard
+├── docker-compose.yml          # Kafka (KRaft) + producer + guardrail-consumer + analytics-consumer + jaeger + dashboard
+├── shared/                      # Core-platform-laajennuksen kanoniset lähteet (vendoroidaan build-aikana)
+│   ├── internal_auth.py         # HMAC-allekirjoitettu palvelu-palvelu-auth
+│   └── tracing.py                # OTel-alustus + Kafka-header-propagointi + head-based sampling
 ├── scripts/
 │   └── measure.py               # mittausskripti (ks. pääREADME "Tulokset") — ajaa oikeita
 │                                  kokeita pyörivää stackia vasten, kirjoittaa results.json:iin
 ├── video-exporter/               # Export Video -napin backend: Playwright + Chromium + ffmpeg,
 │   └── main.py                   # nauhoittaa ?demo=true:n 1920x1080 MP4:ksi (ks. "Demo Mode")
 ├── producer/
-│   ├── producer.py              # baseline (~200 msg/s) / spike (~8000 msg/s, ~18s)
+│   ├── producer.py              # baseline (~200 msg/s) / spike (~8000 msg/s, ~18s), traceparent-injektio 2%:iin
+│   ├── vendor/tracing.py        # vendoroitu kopio shared/tracing.py:stä
 │   └── requirements.txt
 ├── guardrail/
 │   ├── vendor/refuse_dont_guess.py  # vendoroitu muuttumattomana, ks. "Uudelleenkäyttö vs. uusi"
+│   ├── vendor/tracing.py        # vendoroitu kopio shared/tracing.py:stä
 │   ├── chat_rule.py             # uusi, saman muotoinen chat-moderointisääntö
 │   ├── pipeline.py              # koko päätösputki (ei Kafka-riippuvuutta, testattava)
 │   ├── dedup.py                 # (partition, offset)-LRU, ei Kafka-riippuvuutta
-│   └── guardrail_consumer.py    # Kafka-kuluttaja, consumer group + manual commit + rebalance-callbackit
+│   └── guardrail_consumer.py    # Kafka-kuluttaja, consumer group + manual commit + rebalance-callbackit + trace-jatko
+├── analytics-consumer/           # Core-platform-laajennus: kolmas, itsenäinen kuluttaja
+│   ├── vendor/internal_auth.py  # vendoroitu kopio, palvelinpuoli (verify)
+│   ├── vendor/tracing.py        # vendoroitu kopio
+│   └── analytics_consumer.py    # analytics-group, 10s-ämpärit/1h ikkuna, /health + /metrics (auth)
 ├── dashboard/
 │   ├── backend/                     # FastAPI: WebSocket-silta Kafka-mittareista selaimeen
+│   │   ├── vendor/internal_auth.py  # vendoroitu kopio, asiakaspuoli (sign)
+│   │   └── vendor/tracing.py        # vendoroitu kopio
 │   └── frontend/src/
 │       ├── demoScript.ts             # Demo Mode -aikajana (ks. pääREADME "Demo Mode")
 │       ├── useDemoMode.ts            # ?demo=true -hook: auto-piikki + tekstitykset
@@ -93,6 +116,7 @@ ruuhkavahti/
 ├── tests/
 │   ├── test_guardrail_logic.py  # yksikkötestit ilman Kafka-riippuvuutta
 │   ├── test_dedup.py            # DedupCache-yksikkötestit, ei Kafka-riippuvuutta
+│   ├── test_platform_extension.py  # internal_auth + RollingAggregate + analytics-consumer HTTP-kerros
 │   ├── test_a11y.py             # axe-core dashboardille, ei myöskään Kafka-riippuvuutta
 │   └── requirements.txt
 ├── results.json                 # raakadata pääREADME:n "Tulokset"-osioon

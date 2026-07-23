@@ -30,10 +30,14 @@ from kafka_metrics import (
     producer_status_poll_loop,
     rebalance_events_consumer_loop,
 )
+from vendor import internal_auth, tracing
 
 KAFKA_BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP", "localhost:9092")
 PRODUCER_URL = os.environ.get("PRODUCER_URL", "http://producer:8001")
 VIDEO_EXPORTER_URL = os.environ.get("VIDEO_EXPORTER_URL", "http://video-exporter:8002")
+ANALYTICS_URL = os.environ.get("ANALYTICS_URL", "http://analytics-consumer:8003")
+
+tracer = tracing.init_tracing("dashboard-backend")
 
 app = FastAPI()
 app.add_middleware(
@@ -127,6 +131,32 @@ async def export_video_download() -> Response:
             media_type="video/mp4",
             headers={"Content-Disposition": "attachment; filename=ruuhkavahti-demo.mp4"},
         )
+
+
+@app.get("/api/platform-metrics")
+async def platform_metrics() -> dict:
+    """Hakee analytics-consumerin liukuvan tunnin ikkunan (ks. sen docstring).
+
+    Tämä on ensimmäinen suora palvelu-palvelu HTTP-kutsu ruuhkavahdissa
+    (aiemmin palvelut ovat kommunikoineet vain Kafkan kautta) — siksi
+    allekirjoitetaan sisäisellä jaetulla salaisuudella (ks. vendor/internal_auth.py)
+    eikä vain luoteta Docker-verkon sisäisyyteen."""
+    with tracer.start_as_current_span("dashboard.fetch_platform_metrics") as span:
+        try:
+            headers = internal_auth.sign("GET", "/metrics")
+        except internal_auth.AuthError as exc:
+            span.set_attribute("ruuhkavahti.auth_error", True)
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        async with httpx.AsyncClient() as client:
+            try:
+                r = await client.get(f"{ANALYTICS_URL}/metrics", headers=headers, timeout=5.0)
+            except httpx.HTTPError as exc:
+                span.set_attribute("ruuhkavahti.upstream_error", True)
+                raise HTTPException(status_code=502, detail=f"analytics-consumer ei vastaa: {exc}") from exc
+            if r.status_code != 200:
+                raise HTTPException(status_code=r.status_code, detail=r.text)
+            return r.json()
 
 
 @app.websocket("/ws")

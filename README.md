@@ -20,6 +20,7 @@
 - **Saavutettavuus on toinen, yhtä painava väite.** `prefers-reduced-motion` vaihtaa 3D-partikkelivirran samaan dataan ilman jatkuvaa liikettä, jokainen mittari on olemassa oikeana semanttisena HTML:nä pikselien lisäksi, ja `tests/test_a11y.py` todistaa tämän automaattisesti (axe-core, molemmat tilat).
 - **Eager vs. cooperative-sticky (KIP-429) tehdään näkyväksi elävästi**, mukaan lukien rehellinen rajaus siitä milloin ero oikeasti näkyy (ks. "Tulokset" ja DEEP_DIVE.md).
 - **At-least-once + idempotenssi on ratkaistu suunnittelutasolla**, ei ohitettu: (partition, offset)-pohjainen duplikaattisuodatus, mitattu oikealla fault-injection-kokeella, ei väitteellä.
+- **Core platform -primitiivit ovat mukana, eivät vain guardrail-demoa.** Kolmas riippumaton kuluttaja samalle tapahtumavirralle, allekirjoitettu palvelu-palvelu-auth ja jaettu jäljitys Kafka-headereiden läpi Jaegeriin — ks. DEEP_DIVE.md "Core platform -laajennus".
 
 ## Arkkitehtuuri
 
@@ -45,6 +46,8 @@
 
 Guardrail-logiikka pohjautuu (osittain vendoroituna, osittain uutena) repoon [`mikko-lab/refuse-dont-guess`](https://github.com/mikko-lab/refuse-dont-guess) — tarkka rajanveto: DEEP_DIVE.md.
 
+Samoja `approved/escalated/blocked-messages`-topiceja lukee myös riippumaton `analytics-consumer` (oma consumer group, oma retentio, allekirjoitettu HTTP-rajapinta) — putken jäljitys kulkee Kafka-headereiden läpi Jaegeriin (`localhost:16686`). Ks. "Core platform -laajennus" DEEP_DIVE.md:ssä.
+
 ## Ajaminen
 
 ### Ilman omaa konetta (esim. iPad / Chromebook) — GitHub Codespaces
@@ -61,11 +64,11 @@ docker compose up -d --build
 # odota että kafka-init on luonut topicit (docker compose logs kafka-init)
 ```
 
-Kun stack on käynnissä, avaa live-dashboard: **[http://localhost:5173](http://localhost:5173)** (koko UI säätimineen — Demo Mode -tekstitetty versio: [http://localhost:5173/?demo=true](http://localhost:5173/?demo=true)).
+Kun stack on käynnissä, avaa live-dashboard: **[http://localhost:5173](http://localhost:5173)** (koko UI säätimineen — Demo Mode -tekstitetty versio: [http://localhost:5173/?demo=true](http://localhost:5173/?demo=true)). Jaeger-UI jäljitykselle: **[http://localhost:16686](http://localhost:16686)** (valitse service `producer`, `guardrail-consumer` tai `analytics-consumer`).
 
 ```bash
 # yksikkö- ja saavutettavuustestit ilman Kafkaa
-python3 -m unittest tests/test_guardrail_logic.py tests/test_dedup.py -v
+python3 -m unittest tests/test_guardrail_logic.py tests/test_dedup.py tests/test_platform_extension.py -v
 cd dashboard/frontend && npm install && cd ../..
 pip install -r tests/requirements.txt && playwright install chromium
 python3 -m pytest tests/test_a11y.py -v
@@ -132,7 +135,8 @@ Lisäksi: `LiveAnnouncer.tsx` ilmoittaa lag-tason muutokset ja piikin alun/lopun
 - **Duplikaattisuodatus ei selviä consumerin uudelleenkäynnistyksestä** → `DedupCache` on prosessin muistissa, rajattu 500 viestiin. Mitattu duplikaattitiheys (0/12 251) johtuu osin juuri per-viesti-committing-mallista — ei tarkoita että mekanismia ei tarvittaisi, vain että sen luonnollinen laukaisutaajuus on matala tässä arkkitehtuurissa. Tuotantotason vaihtoehto: pysyvä dedup-tallennus (Redis/tietokanta) tai Kafkan transaktionaalinen tuottaja. Ks. DEEP_DIVE.md.
 - **Läpimeno/palautumisaika eivät erottele kuluttajamäärää tässä ympäristössä** → ks. "Tulokset": 8000 msg/s piikki + kevyt moderointilogiikka eivät riitä pullonkauloittamaan yhtä kuluttajaa. Piikin huippulag sen sijaan erottelee selvästi.
 - **Rebalance-pausimittaus on n=1 per strategia, ei toistettu** → havaittu run-to-run-hajonta oli merkittävää alustavissa ajoissa. Aja `scripts/measure.py rebalance` uudelleen useampaan kertaan ennen kuin lukuja käyttää tarkkana benchmarkina.
-- **Autentikointi, TLS, tuotantotason monitorointi** → ei mukana, demo keskittyy yhteen tarinaan (lag + rebalance).
+- **Sisäinen auth on jaettu staattinen salaisuus, ei mTLS eikä rotaatio** → `INTERNAL_SHARED_SECRET` suojaa vain *kuka* kutsuu `analytics-consumer`:ia, ei kuljetusta (ei TLS palveluiden välillä). Yhden palvelun kompromissi kompromisoi koko sisäisen verkon. Ks. `shared/internal_auth.py`.
+- **Jäljitys on karkeasti sampled eikä pysyvä** → 2 % head-based sampling piikin takia, ei perustu virhetilanteisiin (ESCALATE/BLOCK ei jäljity varmemmin kuin PASS). Jaeger on yksi in-memory-instanssi — span-data katoaa kontin sammuessa, ei kelpaa auditointiin. Ks. `shared/tracing.py`.
 - **axe-core kattaa automatisoidusti havaittavan** → n. 30-50 % WCAG-ongelmista tyypillisesti; manuaalinen ruudunlukijatestaus (VoiceOver/NVDA) puuttuu, liputettu tässä.
 
 ---

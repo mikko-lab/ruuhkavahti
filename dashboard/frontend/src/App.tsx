@@ -6,13 +6,16 @@ import { LiveAnnouncer } from "./components/LiveAnnouncer";
 import { AccessibleDataTable } from "./components/AccessibleDataTable";
 import { RebalanceBanner } from "./components/RebalanceBanner";
 import { DuplicateCounter } from "./components/DuplicateCounter";
+import { AnalyticsConsumerPanel } from "./components/AnalyticsConsumerPanel";
 import { DemoCaption } from "./components/DemoCaption";
 import { useMetricsSocket } from "./useMetricsSocket";
+import { usePlatformMetrics } from "./usePlatformMetrics";
 import { usePrefersReducedMotion } from "./usePrefersReducedMotion";
 import { useDemoMode } from "./useDemoMode";
 
 export default function App() {
   const snapshot = useMetricsSocket();
+  const platformMetrics = usePlatformMetrics();
   const reducedMotion = usePrefersReducedMotion();
   const demo = useDemoMode();
   const partitions = Object.keys(snapshot.lag)
@@ -47,6 +50,7 @@ export default function App() {
           </div>
           <DecisionBarChart snapshot={snapshot} />
           <DuplicateCounter snapshot={snapshot} />
+          <AnalyticsConsumerPanel metrics={platformMetrics} />
           <Controls snapshot={snapshot} demoMode={demo.active} />
           {!demo.active && <AccessibleDataTable snapshot={snapshot} />}
         </aside>

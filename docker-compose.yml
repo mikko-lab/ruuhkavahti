@@ -44,6 +44,18 @@ services:
       kafka-topics --bootstrap-server kafka:29092 --list
       "
 
+  # Core-platform-laajennus: yhden Jaeger-kontin OTLP-collector + UI.
+  # In-memory storage (ei pysyvyyttä yli kontin elinkaaren, ks. shared/tracing.py
+  # rajoitukset) — riittää demoon, ei auditointiin.
+  jaeger:
+    image: jaegertracing/all-in-one:1.58
+    container_name: ruuhkavahti-jaeger
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4317:4317"    # OTLP gRPC receiver
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+
   producer:
     build: ./producer
     depends_on:
@@ -52,6 +64,8 @@ services:
     environment:
       KAFKA_BOOTSTRAP: kafka:29092
       MODE: baseline
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      TRACE_SAMPLE_RATE: ${TRACE_SAMPLE_RATE:-0.02}
 
   guardrail-consumer:
     build: ./guardrail
@@ -63,17 +77,40 @@ services:
       # "cooperative-sticky" (KIP-429, oletus) tai "range" (klassinen eager) —
       # vaihto vaatii kontin uudelleenkäynnistyksen, ks. README "Rebalance-strategiat".
       ASSIGNMENT_STRATEGY: ${ASSIGNMENT_STRATEGY:-cooperative-sticky}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+
+  # Core-platform-laajennus: kolmas, dashboard-backendistä riippumaton kuluttaja
+  # samoille decision-topiceille (ks. analytics_consumer.py docstring).
+  analytics-consumer:
+    build: ./analytics-consumer
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP: kafka:29092
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      INTERNAL_SHARED_SECRET: ${INTERNAL_SHARED_SECRET:-dev-only-shared-secret-change-me}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   dashboard-backend:
     build: ./dashboard/backend
     depends_on:
       kafka-init:
         condition: service_completed_successfully
+      analytics-consumer:
+        condition: service_healthy
     ports:
       - "8000:8000"
     environment:
       KAFKA_BOOTSTRAP: kafka:29092
       VIDEO_EXPORTER_URL: http://video-exporter:8002
+      ANALYTICS_URL: http://analytics-consumer:8003
+      INTERNAL_SHARED_SECRET: ${INTERNAL_SHARED_SECRET:-dev-only-shared-secret-change-me}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
 
   dashboard-frontend:
     build: ./dashboard/frontend
