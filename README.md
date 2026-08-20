@@ -1,146 +1,150 @@
+**English** | [Suomi](README.fi.md)
+
 # Ruuhkavahti
 
-*Kafka-pohjainen reaaliaikainen guardrail-demo*
+*A Kafka-based real-time guardrail demo*
 
-> **TL;DR** — Simuloitu TV-lähetyksen katsojachat, joka moderoidaan reaaliajassa deterministisellä PASS/ESCALATE/BLOCK-turvakerroksella skaalautuvassa Kafka consumer groupissa. Dashboard näyttää elävänä **consumer lagin partitioittain** — ainoan luvun joka todistaa pysyykö järjestelmä piikin tahdissa ja auttaako kuluttajien lisääminen oikeasti — ja on samalla WCAG 2.1/2.2 AA -saavutettava, ei jälkikäteen liimattuna vaan yhtä todistettuna väitteenä kuin lag-metriikka itse.
+> **TL;DR** — A simulated live-TV viewer chat, moderated in real time by a deterministic PASS/ESCALATE/BLOCK safety layer running inside a scalable Kafka consumer group. The dashboard shows **live consumer lag per partition** — the one number that actually proves whether the system keeps pace with a spike and whether adding consumers helps — while the whole thing is WCAG 2.1/2.2 AA accessible, not bolted on afterward but proven as rigorously as the lag metric itself.
 
-**Skenaario:** Suora TV-lähetys, katsojaviestien määrä piikkaa hetkellisesti (esim. maalihetki). Jokainen viesti moderoidaan reaaliajassa ilman että ruuhka kaataa palvelun tai hukkaa viestejä.
+**Scenario:** A live TV broadcast where viewer-message volume spikes momentarily (e.g. at a goal). Every message is moderated in real time without the surge taking the service down or dropping messages.
 
-**Periaate: "Liputa, älä piilota."** Mikään päätös ei häviä jäljettömiin — jokainen viesti päätyy jäljitettävästi yhteen kolmesta polusta: `approved`, `escalated` tai `blocked`. Sama periaate koskee mittareita: alla olevat luvut ovat oikeasta, ajettavasta stackista mitattuja, ei arvioita (ks. "Tulokset").
+**Principle: "Flag it, don't hide it."** No decision disappears untraceably — every message ends up on one of three traceable paths: `approved`, `escalated`, or `blocked`. The same principle applies to the metrics: the numbers below are measured from the actual running stack, not estimated (see "Results").
 
 ---
 
-![Demo: piikki + lag-palautuminen](docs/demo.gif)
+![Demo: spike + lag recovery](docs/demo.gif)
 
-*Katso koko 50 sekunnin nauhoitus tekstityksin: [docs/demo.mp4](docs/demo.mp4). Molemmat on tuotettu automaattisesti "Export Video" -napilla, ks. "Demo Mode" alla — sama, toistettavissa oleva käsikirjoitus joka kerta, ei käsin nauhoitettu.*
+*Watch the full 50-second recording with captions: [docs/demo.mp4](docs/demo.mp4). Both were generated automatically with the "Export Video" button (see "Demo Mode" below) — the same, repeatable script every time, not manually recorded.*
 
-## Mitä tämä osoittaa
+## What this demonstrates
 
-- **Consumer lag on ainoa mittari joka ei valehtele.** Piikin aikana se kasvaa, ja kuluttajien lisäys näkyy siinä suoraan reaaliajassa — muut mittarit (esim. kokonaisläpimeno) voivat pysyä lähes vakioina vaikka lag ei pysy (ks. "Tulokset").
-- **Saavutettavuus on toinen, yhtä painava väite.** `prefers-reduced-motion` vaihtaa 3D-partikkelivirran samaan dataan ilman jatkuvaa liikettä, jokainen mittari on olemassa oikeana semanttisena HTML:nä pikselien lisäksi, ja `tests/test_a11y.py` todistaa tämän automaattisesti (axe-core, molemmat tilat).
-- **Eager vs. cooperative-sticky (KIP-429) tehdään näkyväksi elävästi**, mukaan lukien rehellinen rajaus siitä milloin ero oikeasti näkyy (ks. "Tulokset" ja DEEP_DIVE.md).
-- **At-least-once + idempotenssi on ratkaistu suunnittelutasolla**, ei ohitettu: (partition, offset)-pohjainen duplikaattisuodatus, mitattu oikealla fault-injection-kokeella, ei väitteellä.
-- **Core platform -primitiivit ovat mukana, eivät vain guardrail-demoa.** Kolmas riippumaton kuluttaja samalle tapahtumavirralle, allekirjoitettu palvelu-palvelu-auth ja jaettu jäljitys Kafka-headereiden läpi Jaegeriin — ks. DEEP_DIVE.md "Core platform -laajennus".
+- **Consumer lag is the one metric that doesn't lie.** It rises during the spike, and adding consumers shows up directly in it in real time — other metrics (e.g. total throughput) can stay nearly flat even when lag doesn't (see "Results").
+- **Accessibility is a second, equally load-bearing claim.** `prefers-reduced-motion` swaps the 3D particle stream for the same data without continuous motion, every metric exists as real semantic HTML in addition to pixels, and `tests/test_a11y.py` proves this automatically (axe-core, both modes).
+- **Eager vs. cooperative-sticky (KIP-429) is made visible live**, including an honest account of when the difference actually shows up (see "Results" and DEEP_DIVE.md, Finnish).
+- **At-least-once + idempotency is solved at the design level**, not skipped: (partition, offset)-based duplicate filtering, measured with a real fault-injection experiment, not asserted.
+- **Core-platform primitives are included, not just the guardrail demo.** An independent consumer connected to the same event stream, signed service-to-service auth, and shared tracing through Kafka headers into Jaeger — see "Core platform extension" in DEEP_DIVE.md (Finnish).
 
-## Arkkitehtuuri
+## Architecture
 
 ```
 [Viewer Simulator]  →  Kafka topic: viewer-messages  →  [Guardrail Consumer Group]
-   (producer,             (4 partitiota,                  (1-4 rinnakkaista workeria,
-    säädettävä              key = viewer_id                 deterministinen
-    lähetysnopeus,           järjestyksen                    PASS/ESCALATE/BLOCK)
-    "piikki"-tila)           säilyttämiseksi)
+   (producer,             (4 partitions,                  (1-4 parallel workers,
+    adjustable              key = viewer_id                 deterministic
+    send rate,               to preserve                     PASS/ESCALATE/BLOCK)
+    "spike" mode)            ordering)
                                                                       │
                               ┌───────────────────────────────────────┼───────────────────────┐
                               ▼                                       ▼                       ▼
                     Kafka topic:                          Kafka topic:              Kafka topic:
                     approved-messages                      escalated-messages         blocked-messages
-                    (näytölle)                              (ihmismoderaattorille)     (auditloki)
+                    (to screen)                             (to human moderator)       (audit log)
                               │
                               ▼
-                    [Dashboard / Visualisointi]
-                    - live consumer lag per partitio
-                    - päätösjakauma (pass/escalate/block) reaaliajassa
-                    - läpimenoaika (p50/p95)
+                    [Dashboard / Visualization]
+                    - live consumer lag per partition
+                    - decision distribution (pass/escalate/block) in real time
+                    - throughput latency (p50/p95)
 ```
 
-Guardrail-logiikka pohjautuu (osittain vendoroituna, osittain uutena) repoon [`mikko-lab/refuse-dont-guess`](https://github.com/mikko-lab/refuse-dont-guess) — tarkka rajanveto: DEEP_DIVE.md.
+The guardrail logic builds on (partly vendored, partly new) [`mikko-lab/refuse-dont-guess`](https://github.com/mikko-lab/refuse-dont-guess) — the exact boundary is documented in DEEP_DIVE.md (Finnish).
 
-Samoja `approved/escalated/blocked-messages`-topiceja lukee myös riippumaton `analytics-consumer` (oma consumer group, oma retentio, allekirjoitettu HTTP-rajapinta) — putken jäljitys kulkee Kafka-headereiden läpi Jaegeriin (`localhost:16686`). Ks. "Core platform -laajennus" DEEP_DIVE.md:ssä.
+The same `approved/escalated/blocked-messages` topics are also read by an independent `analytics-consumer` (its own consumer group, its own retention, a signed HTTP interface) — pipeline tracing runs through Kafka headers into Jaeger (`localhost:16686`). See "Core platform extension" in DEEP_DIVE.md (Finnish).
 
-## Ajaminen
+## Running
 
-### Ilman omaa konetta (esim. iPad / Chromebook) — GitHub Codespaces
+### Without your own machine (e.g. iPad / Chromebook) — GitHub Codespaces
 
-1. Avaa repo GitHubissa: `github.com/mikko-lab/ruuhkavahti`
-2. **Code** → **Codespaces**-välilehti → **Create codespace on main**
-3. Aja terminaalissa alla olevat Docker-komennot normaalisti.
-4. **Ports**-välilehdeltä avautuvat `5173` (dashboard) ja `8000` (backend) julkisina esikatselulinkkeinä.
+1. Open the repo on GitHub: `github.com/mikko-lab/ruuhkavahti`
+2. **Code** → **Codespaces** tab → **Create codespace on main**
+3. Run the Docker commands below in the terminal as normal.
+4. The **Ports** tab exposes `5173` (dashboard) and `8000` (backend) as public preview links.
 
-### Paikallisesti
+### Locally
 
 ```bash
 docker compose up -d --build
-# odota että kafka-init on luonut topicit (docker compose logs kafka-init)
+# wait for kafka-init to have created the topics (docker compose logs kafka-init)
 ```
 
-Kun stack on käynnissä, avaa live-dashboard: **[http://localhost:5173](http://localhost:5173)** (koko UI säätimineen — Demo Mode -tekstitetty versio: [http://localhost:5173/?demo=true](http://localhost:5173/?demo=true)). Jaeger-UI jäljitykselle: **[http://localhost:16686](http://localhost:16686)** (valitse service `producer`, `guardrail-consumer` tai `analytics-consumer`).
+Once the stack is running, open the live dashboard: **[http://localhost:5173](http://localhost:5173)** (the full UI with controls — captioned Demo Mode version: [http://localhost:5173/?demo=true](http://localhost:5173/?demo=true)). Jaeger UI for tracing: **[http://localhost:16686](http://localhost:16686)** (select service `producer`, `guardrail-consumer`, or `analytics-consumer`).
 
 ```bash
-# yksikkö- ja saavutettavuustestit ilman Kafkaa
+# unit and accessibility tests without Kafka
 python3 -m unittest tests/test_guardrail_logic.py tests/test_dedup.py tests/test_platform_extension.py -v
 cd dashboard/frontend && npm install && cd ../..
 pip install -r tests/requirements.txt && playwright install chromium
 python3 -m pytest tests/test_a11y.py -v
 
-# skaalaa kuluttajia elävässä demossa
+# scale consumers in the live demo
 docker compose up -d --scale guardrail-consumer=4
 ```
 
-Dashboardin "Laukaise piikki" -nappi kutsuu producerin `/trigger-spike`-päätepistettä suoraan (aito live-kontrolli). Kuluttajamäärä- ja strategiavalinnat näyttävät kopioitavan komennon sen sijaan että ohjaisivat Dockeria kontin sisältä — tietoinen turvallisuusvalinta, ei `docker.sock`-mounttia taustapalveluun.
+The dashboard's "Trigger spike" button calls the producer's `/trigger-spike` endpoint directly (a genuine live control). The consumer-count and strategy selectors show a copyable command instead of driving Docker from inside the container — a deliberate security choice, not a `docker.sock` mount into a backend service.
 
-### Demo Mode (yhden oton nauhoitusta varten)
+### Demo Mode (for single-take recording)
 
-`http://localhost:5173/?demo=true` käynnistää kiinteän ~46 sekunnin käsikirjoituksen (`dashboard/frontend/src/demoScript.ts`), jotta OBS-nauhoitus toistuu identtisenä joka kerta: avaustekstitys ("Simulating a live TV broadcast traffic spike") antaa katsojalle kontekstin heti, piikki laukeaa automaattisesti t=9s, fade-tekstitykset seuraavat skriptiä (`aria-hidden`, eivät toistu ruudunlukijalle), manuaaliset kontrollit piiloutuvat, 3D-kameran kiertoliike jäädytetään — liike syntyy vain datasta — ja lopputekstitys ("Deterministic guardrails stayed online during the spike") kiteyttää pointin. Kunnioittaa `prefers-reduced-motion`-asetusta normaalisti. Kuluttajaskaalaus (`docker compose up -d --scale guardrail-consumer=4`) on yhä presenterin oma manuaalinen askel toisessa terminaalissa — tekstitys "Scaling consumer group…" on ajoitusvihje, ei automaatio (sama `docker.sock`-rajaus kuin yllä). Harjoittele ajoitus kerran ennen varsinaista ottoa.
+`http://localhost:5173/?demo=true` starts a fixed ~46-second script (`dashboard/frontend/src/demoScript.ts`) so an OBS recording plays back identically every time: an opening caption ("Simulating a live TV broadcast traffic spike") gives the viewer context immediately, the spike triggers automatically at t=9s, fade captions follow the script (`aria-hidden`, not announced to screen readers), manual controls hide, the 3D camera's orbit motion is frozen — motion comes only from the data — and a closing caption ("Deterministic guardrails stayed online during the spike") drives the point home. It respects `prefers-reduced-motion` normally. Consumer scaling (`docker compose up -d --scale guardrail-consumer=4`) is still the presenter's own manual step in a second terminal — the caption "Scaling consumer group…" is a timing cue, not automation (same `docker.sock` restriction as above). Rehearse the timing once before the actual take.
 
-**Export Video -nappi** (sidebarin alaosassa, ei näy demo-tilassa itsessään) tekee OBS:n tarpeettomaksi: se kutsuu erillistä `video-exporter`-palvelua (oma kontti, Playwright + Chromium + ffmpeg), joka ajaa `?demo=true`-käsikirjoituksen oikealla selaimella 1920×1080-resoluutiolla, nauhoittaa sen ja muuntaa H.264-MP4:ksi (~50 s kokonaiskesto, valmis tiedosto latautuu automaattisesti nappiin ilmestyvästä linkistä). Sama komento tuottaa identtisen videon joka kerta — ei manuaalista nauhoitusta, ei kameran/mikin asetteluja. `dashboard-backend` toimii ohuena proxynä (`/api/export-video`), sama periaate kuin muillekin kontrolleille.
+**The Export Video button** (at the bottom of the sidebar, not shown in demo mode itself) makes OBS unnecessary: it calls a separate `video-exporter` service (its own container, Playwright + Chromium + ffmpeg) that runs the `?demo=true` script in a real browser at 1920×1080, records it, and converts it to H.264 MP4 (~50 s total, the finished file auto-downloads from a link that appears on the button). The same command produces an identical video every time — no manual recording, no camera/mic setup. `dashboard-backend` acts as a thin proxy (`/api/export-video`), the same principle as the other controls.
 
-## Tulokset
+## Results
 
-Mitattu oikeaa pyörivää stackia vasten `scripts/measure.py`:llä (ei simulaatiota) paikallisella koneella (Docker 29.6.1, KRaft-Kafka, 4 partitiota), piikki 8000 msg/s / ~18 s, baseline 200 msg/s. **Yhden ajon tuloksia** (n=1 per skenaario), ei toistettuja mittauksia keskihajontoineen — raakadata ja menetelmä: `results.json`.
+Measured against the real running stack with `scripts/measure.py` (not a simulation) on a local machine (Docker 29.6.1, KRaft Kafka, 4 partitions), an 8,000 msg/s spike lasting ~18 s, 200 msg/s baseline. **Single-run results** (n=1 per scenario), not repeated measurements with standard deviations — raw data and method: `results.json`.
 
-**Läpimeno ja latenssi piikin aikana, kuluttajamäärän funktiona:**
+**Throughput and latency during the spike, as a function of consumer count:**
 
-| Kuluttajia | Läpimeno (msg/s) | p50 (ms) | p95 (ms) | Piikin huippulag | Palautuminen piikin jälkeen |
+| Consumers | Throughput (msg/s) | p50 (ms) | p95 (ms) | Peak spike lag | Recovery after spike |
 |---|---|---|---|---|---|
 | 1 | 7719 | 8.9 | 13.3 | 1489 | 3.35 s |
 | 2 | 7830 | 7.8 | 12.2 | 659 | 3.88 s |
 | 4 | 7704 | 7.0 | 9.2 | 400 | 4.43 s |
 
-**Huomio — liputettu, ei piilotettu:** kokonaisläpimeno ja palautumisaika pysyvät lähes vakioina kuluttajamäärästä riippumatta: 8000 msg/s piikki ja kevyt avainsanaskannaus eivät riitä tekemään yhdestä kuluttajasta pullonkaulaa tässä ympäristössä. Todellinen, mitattava hyöty näkyy **piikin aikaisessa huippulagissa**, joka laskee lähes lineaarisesti kuluttajamäärän kasvaessa (1489 → 659 → 400) — useampi kuluttaja pitää jonon lyhyempänä koko piikin ajan, vaikka lopputulos piikin jälkeen on sama.
+**Note — flagged, not hidden:** total throughput and recovery time stay nearly constant regardless of consumer count: an 8,000 msg/s spike and lightweight keyword scanning aren't enough to make a single consumer a bottleneck in this environment. The real, measurable benefit shows up in **peak lag during the spike**, which falls almost linearly as consumer count increases (1489 → 659 → 400) — more consumers keep the queue shorter throughout the spike, even though the end state after the spike is the same.
 
-**Rebalance-pausi skaalattaessa 1 → 4 kuluttajaa:**
+**Rebalance pause when scaling 1 → 4 consumers:**
 
-| Strategia | Ryhmän koordinaattoripausi | Partitioita pysähtyi |
+| Strategy | Group coordinator pause | Partitions stopped |
 |---|---|---|
 | cooperative-sticky | 2.79 s | 4 / 4 |
 | eager (range) | 2.65 s | 4 / 4 |
 
-**Huomio:** 1→4-skaalauksessa kaikki 4 partitiota vaihtavat väistämättä omistajaa riippumatta strategiasta (yhdellä alkuperäisellä kuluttajalla oli kaikki neljä) — cooperative-stickyn "vain siirtyvät partitiot pysähtyvät" -etu ei siis pääse tässä konkreettisesti näkyviin. Alustavissa instrumentoimattomissa ajoissa koordinaattoripausin hajonta oli suurta (0.76 s – 6.57 s); n=1 per strategia, ei tarkka benchmark. Per-partitio-data ja selitys: DEEP_DIVE.md.
+**Note:** when scaling 1→4, all 4 partitions inevitably change ownership regardless of strategy (one original consumer held all four) — so cooperative-sticky's "only the moving partitions stop" advantage doesn't concretely show up here. In preliminary, uninstrumented runs, coordinator-pause variance was large (0.76 s – 6.57 s); n=1 per strategy, not a precise benchmark. Per-partition data and explanation: DEEP_DIVE.md (Finnish).
 
-**Duplikaattisuodatus** (`docker pause` 50 s yksittäiselle kuluttajalle, ei restart — DedupCache säilyy muistissa):
+**Duplicate filtering** (`docker pause` for 50 s on a single consumer, not a restart — the DedupCache stays in memory):
 
-| Viestejä käsitelty testin aikana | Duplikaatteja suodatettu |
+| Messages processed during the test | Duplicates filtered |
 |---|---|
-| 12 251 | 0 |
+| 12,251 | 0 |
 
-**Huomio:** nolla ei ole mittausvirhe — per-viesti-synkroninen commit (ks. DEEP_DIVE.md) tekee ei-committoitujen viestien ikkunasta niin kapean, ettei tämä koe tuottanut yhtään duplikaattia. Mekanismi on todistettu yksikkötasolla (`tests/test_dedup.py`); tämä koe todistaa sen sijaan miten harvoin at-least-once-uudelleentoimitus oikeasti laukeaa.
+**Note:** zero is not a measurement error — per-message synchronous commit (see DEEP_DIVE.md, Finnish) makes the window of uncommitted messages so narrow that this experiment produced no duplicates at all. The mechanism is proven at the unit level (`tests/test_dedup.py`); this experiment instead demonstrates how rarely at-least-once redelivery actually triggers.
 
 ## Accessibility
 
-Sama data kolmena rinnakkaisena esitysmuotona, ei "pääversiona" + kevennettynä varana:
+The same data in three parallel presentations, not a "main version" plus a stripped-down fallback:
 
-| Esitysmuoto | Milloin näkyy | Komponentti |
+| Presentation | When shown | Component |
 |---|---|---|
-| 3D-partikkelivirta | oletus, `prefers-reduced-motion: no-preference` | `ParticleFlow3D.tsx` (`aria-hidden="true"`) |
-| 2D-mittarinäkymä | `prefers-reduced-motion: reduce` | `LagGauge.tsx` (sama komponentti kummassakin tilassa) |
-| Semanttinen `<table>` | aina saatavilla, painikkeen takana | `AccessibleDataTable.tsx` |
+| 3D particle stream | default, `prefers-reduced-motion: no-preference` | `ParticleFlow3D.tsx` (`aria-hidden="true"`) |
+| 2D gauge view | `prefers-reduced-motion: reduce` | `LagGauge.tsx` (same component in both modes) |
+| Semantic `<table>` | always available, behind a button | `AccessibleDataTable.tsx` |
 
-Lisäksi: `LiveAnnouncer.tsx` ilmoittaa lag-tason muutokset ja piikin alun/lopun tekstinä (`aria-live="polite"`, ei jokaista päivitystä); väri ei ole koskaan ainoa signaali (aina numero + `aria-label`); kaikki kontrollit näppäimistökäytettäviä, näkyvä `:focus-visible`. **Todiste, ei väite:** `tests/test_a11y.py` ajaa axe-coren oletus- ja `reduced-motion`-tilassa — **0 löydöstä, 36 läpäisyä**, molemmissa tiloissa.
+In addition: `LiveAnnouncer.tsx` announces lag-level changes and the start/end of a spike as text (`aria-live="polite"`, not every update); color is never the only signal (always a number + `aria-label`); every control is keyboard-operable, with visible `:focus-visible`. **Proof, not a claim:** `tests/test_a11y.py` runs axe-core in both default and `reduced-motion` mode — **0 findings, 36 passes**, in both modes.
 
-## Limitations (liputa, älä piilota)
+## Limitations (flag it, don't hide it)
 
-- **Todellinen toksisuusluokitin** → korvattu avainsanaskannauksella (`chat_rule.py`); ydin on turvakerroksen rakenne, ei sisällönluokittelun tarkkuus.
-- **Kafka-transaktiot / exactly-once** → tietoinen valinta at-least-once-semantiikan puolesta. Kaksoiskäsittely hyväksytty riski.
-- **Duplikaattisuodatus ei selviä consumerin uudelleenkäynnistyksestä** → `DedupCache` on prosessin muistissa, rajattu 500 viestiin. Mitattu duplikaattitiheys (0/12 251) johtuu osin juuri per-viesti-committing-mallista — ei tarkoita että mekanismia ei tarvittaisi, vain että sen luonnollinen laukaisutaajuus on matala tässä arkkitehtuurissa. Tuotantotason vaihtoehto: pysyvä dedup-tallennus (Redis/tietokanta) tai Kafkan transaktionaalinen tuottaja. Ks. DEEP_DIVE.md.
-- **Läpimeno/palautumisaika eivät erottele kuluttajamäärää tässä ympäristössä** → ks. "Tulokset": 8000 msg/s piikki + kevyt moderointilogiikka eivät riitä pullonkauloittamaan yhtä kuluttajaa. Piikin huippulag sen sijaan erottelee selvästi.
-- **Rebalance-pausimittaus on n=1 per strategia, ei toistettu** → havaittu run-to-run-hajonta oli merkittävää alustavissa ajoissa. Aja `scripts/measure.py rebalance` uudelleen useampaan kertaan ennen kuin lukuja käyttää tarkkana benchmarkina.
-- **Sisäinen auth on jaettu staattinen salaisuus, ei mTLS eikä rotaatio** → `INTERNAL_SHARED_SECRET` suojaa vain *kuka* kutsuu `analytics-consumer`:ia, ei kuljetusta (ei TLS palveluiden välillä). Yhden palvelun kompromissi kompromisoi koko sisäisen verkon. Ks. `shared/internal_auth.py`.
-- **Jäljitys on karkeasti sampled eikä pysyvä** → 2 % head-based sampling piikin takia, ei perustu virhetilanteisiin (ESCALATE/BLOCK ei jäljity varmemmin kuin PASS). Jaeger on yksi in-memory-instanssi — span-data katoaa kontin sammuessa, ei kelpaa auditointiin. Ks. `shared/tracing.py`.
-- **axe-core kattaa automatisoidusti havaittavan** → n. 30-50 % WCAG-ongelmista tyypillisesti; manuaalinen ruudunlukijatestaus (VoiceOver/NVDA) puuttuu, liputettu tässä.
+- **A real toxicity classifier** → replaced with keyword scanning (`chat_rule.py`); the point is the safety layer's structure, not content-classification accuracy.
+- **Kafka transactions / exactly-once** → a deliberate choice in favor of at-least-once semantics. Duplicate processing is an accepted risk.
+- **Duplicate filtering doesn't survive a consumer restart** → `DedupCache` lives in the process's memory, capped at 500 messages. The measured duplicate rate (0/12,251) is partly a result of the per-message commit model itself — it doesn't mean the mechanism is unnecessary, only that its natural trigger rate is low in this architecture. A production-grade alternative: persistent dedup storage (Redis/database) or a Kafka transactional producer. See DEEP_DIVE.md (Finnish).
+- **Throughput/recovery time don't differentiate consumer count in this environment** → see "Results": an 8,000 msg/s spike plus lightweight moderation logic isn't enough to bottleneck a single consumer. Peak spike lag, by contrast, differentiates clearly.
+- **The rebalance-pause measurement is n=1 per strategy, not repeated** → observed run-to-run variance was significant in preliminary runs. Run `scripts/measure.py rebalance` multiple more times before treating the numbers as a precise benchmark.
+- **Internal auth is a shared static secret, not mTLS or rotated** → `INTERNAL_SHARED_SECRET` protects only *who* can call `analytics-consumer`, not the transport (no TLS between services). A single service compromise compromises the whole internal network. See `shared/internal_auth.py`.
+- **Tracing is coarsely sampled and not persistent** → 2% head-based sampling because of the spike, not based on error state (ESCALATE/BLOCK is not traced any more reliably than PASS). Jaeger is a single in-memory instance — span data disappears when the container stops; not fit for audit use. See `shared/tracing.py`.
+- **axe-core covers what's automatically detectable** → typically around 30-50% of WCAG issues; manual screen-reader testing (VoiceOver/NVDA) is missing, flagged here.
 
 ---
 
-*Katso myös: [mikko-lab/refuse-dont-guess](https://github.com/mikko-lab/refuse-dont-guess) — deterministinen turvakerros, josta tämän demon guardrail-logiikka on peräisin.*
+*See also: [mikko-lab/refuse-dont-guess](https://github.com/mikko-lab/refuse-dont-guess) — the deterministic safety layer this demo's guardrail logic is drawn from.*
 
-**Full technical deep dive:** [DEEP_DIVE.md](DEEP_DIVE.md)
+**Full technical deep dive:** [DEEP_DIVE.md](DEEP_DIVE.md) (Finnish)
+
+*Part of [mikko-lab](https://github.com/mikko-lab/mikko-lab)'s deterministic-systems portfolio.*

@@ -60,7 +60,7 @@ At-least-once (ks. "Oppimispolku" kohta 3) tarkoittaa juuri sitä: viesti käsit
 
 Alkuperäinen Ruuhkavahti oli yksi tuottaja + yksi kuluttajaryhmä + yksi dashboard. Kolme lisäystä osoittavat, mitä tapahtuu kun useampi itsenäinen palvelu alkaa jakaa samaa tapahtumavirtaa — "core platform" -ajattelun ydin:
 
-**1. Toinen, riippumaton kuluttaja samalle datalle.** `analytics-consumer` lukee samoja `approved/escalated/blocked-messages`-topiceja omalla consumer groupillaan (`analytics-group`), täysin riippumatta `dashboard-backend`:n omasta kulutuksesta. Se pitää eri retention-mallin (10s-ämpärit, 1h liukuva ikkuna) kuin dashboardin lyhyt live-näyttö — osoittaakseen että Kafka-topic on jaettu kontrakti, ei yhden kuluttajan yksityisomaisuutta. Tämä on täsmälleen se kuvio jolla toinen tiimi liittyisi olemassa olevaan tapahtumavirtaan koskematta alkuperäiseen putkeen.
+**1. Erillinen, riippumaton kuluttaja samalle datalle.** `analytics-consumer` lukee samoja `approved/escalated/blocked-messages`-topiceja omalla consumer groupillaan (`analytics-group`), täysin riippumatta `dashboard-backend`:n omasta kulutuksesta. Se pitää eri retention-mallin (10s-ämpärit, 1h liukuva ikkuna) kuin dashboardin lyhyt live-näyttö — osoittaakseen että Kafka-topic on jaettu kontrakti, ei yhden kuluttajan yksityisomaisuutta. Tämä on täsmälleen se kuvio jolla toinen tiimi liittyisi olemassa olevaan tapahtumavirtaan koskematta alkuperäiseen putkeen.
 
 **2. Sisäinen palvelu-palvelu-autentikointi.** Kun `dashboard-backend` alkoi kutsua `analytics-consumer`:ia suoraan HTTP:n yli (`GET /api/platform-metrics` → `GET analytics-consumer:8003/metrics`), syntyi ensimmäinen kutsu joka ei kulje Kafkan kautta. `shared/internal_auth.py` allekirjoittaa pyynnön HMAC-SHA256:lla jaetulla salaisuudella (`INTERNAL_SHARED_SECRET`) — menetelmä + polku + aikaleima, aikaikkuna estää suorimman replay-hyökkäyksen. Katso moduulin oma "liputa älä piilota" -osio tarkoista rajoituksista (ei rotaatiota, ei TLS:ää, ei nonce-tallennusta).
 
@@ -92,7 +92,7 @@ ruuhkavahti/
 │   ├── pipeline.py              # koko päätösputki (ei Kafka-riippuvuutta, testattava)
 │   ├── dedup.py                 # (partition, offset)-LRU, ei Kafka-riippuvuutta
 │   └── guardrail_consumer.py    # Kafka-kuluttaja, consumer group + manual commit + rebalance-callbackit + trace-jatko
-├── analytics-consumer/           # Core-platform-laajennus: kolmas, itsenäinen kuluttaja
+├── analytics-consumer/           # Core-platform-laajennus: erillinen, itsenäinen kuluttaja
 │   ├── vendor/internal_auth.py  # vendoroitu kopio, palvelinpuoli (verify)
 │   ├── vendor/tracing.py        # vendoroitu kopio
 │   └── analytics_consumer.py    # analytics-group, 10s-ämpärit/1h ikkuna, /health + /metrics (auth)
